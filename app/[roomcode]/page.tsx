@@ -60,7 +60,7 @@ export default function RoomPage() {
           Users in Room: <strong>{numUsers}</strong>
         </h2>
       )}
-      <p className="my-4">Open <a className="text-blue-600 underline"href="/a3b4" target="_blank">localhost:3000/a3b4</a> in an additional tab and check out the different socket.io messages when you join/leave the room. </p>
+      <p className="my-4">Open <a className="text-blue-600 underline"href="/a3b4" target="_blank">localhost:3001/a3b4</a> in an additional tab and check out the different socket.io messages when you join/leave the room. </p>
       <div className="mt-8">
         <h3 className="text-xl">📢 Socket.IO Messages:</h3>
         <ul className="list-none p-0">
