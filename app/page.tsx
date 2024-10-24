@@ -51,7 +51,7 @@ export default function Home() {
             .
           </li>
           <li>Save and see your changes to this page instantly.</li>
-          <li>Click Join Room below to see how socket.io in action.</li>
+          <li>Click Join Room below to see socket.io in action.</li>
         </ol>
 
         <div className="flex gap-4 items-center flex-col sm:flex-row">
