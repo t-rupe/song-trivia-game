@@ -10,6 +10,10 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Copy, Users, Wifi, WifiOff } from "lucide-react";
+// TODO Stephanie: Import useState for managing local state
+// import { useState } from "react";
+// TODO Stephanie: You'd also want to import the Input component from the UI components
+// import { Input } from "@/components/ui/input";
 
 interface Player {
   id: string;
@@ -38,8 +42,17 @@ export function LobbyContent({
   const maxPlayers = 8;
   const isHost = players.find((p) => p.id === playerId)?.isHost || false;
 
+  // TODO Stephanie: Add state to manage the new name input
+  // const [newName, setNewName] = useState("");
+
+  // TODO Stephanie: Function to handle name change submission
+  // const handleNameChange = () => {
+  //   // Implement the logic to update the player's name
+  //   //
+  // };
+
   const copyRoomCode = async () => {
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+    const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
     try {
       await navigator.clipboard.writeText(`${baseUrl}/room/${roomCode}`);
     } catch (err) {
@@ -71,7 +84,9 @@ export function LobbyContent({
         </div>
         <CardTitle className="text-3xl font-bold text-center">Lobby</CardTitle>
         <CardDescription className="text-center text-lg">
-          {isJoined ? "Waiting for players to join..." : "Connecting to room..."}
+          {isJoined
+            ? "Waiting for players to join..."
+            : "Connecting to room..."}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -98,7 +113,21 @@ export function LobbyContent({
                   <AvatarFallback>{player.name[0]}</AvatarFallback>
                 </Avatar>
                 <div className="flex flex-col">
-                  <span>{player.name}</span>
+                  {player.id === playerId ? (
+                    // TODO Stephanie: Allow the current user to edit their name also maybe update the UI to make it clear that the name is editable
+                    <>
+                      {/* TODO Stephanie: Replace this span with an input field */}
+                      {/* <Input
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        placeholder="Enter new name"
+                      /> */}
+                      {/* TODO Stephanie: Add a button to submit the new name */}
+                      {/* <Button onClick={handleNameChange}>Change Name</Button> */}
+                    </>
+                  ) : (
+                    <span>{player.name}</span>
+                  )}
                   {player.isHost && (
                     <span className="text-xs text-purple-500">Host</span>
                   )}

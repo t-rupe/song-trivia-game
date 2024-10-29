@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import { LobbyContent } from "@/components/lobby-content";
 import GameContent from "@/components/game-content";
 import GameOverContent from "@/components/game-over-content";
-import { initSocket } from "../../../lib/socket";
+import { initSocket } from "@/lib/socket";
 import { BasePlayer, GamePlayer, GamePhase, GameState } from "@/types/game";
 
 export default function RoomPage() {
