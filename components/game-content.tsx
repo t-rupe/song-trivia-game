@@ -1,12 +1,12 @@
 "use client";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Music } from "lucide-react";
 import { initSocket } from "@/lib/socket";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 
 interface Song {
   id: string;
@@ -26,7 +26,6 @@ interface Player {
 
 export default function GameContent() {
   const params = useParams();
-  const router = useRouter();
   const roomCode = params?.roomcode as string;
   const [currentRound, setCurrentRound] = useState(0);
   const [maxRounds, setMaxRounds] = useState(10);

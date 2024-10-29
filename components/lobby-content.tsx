@@ -20,7 +20,6 @@ interface Player {
 
 interface LobbyContentProps {
   roomCode: string;
-  isConnected: boolean;
   isJoined: boolean;
   players: Player[];
   playerId: string | null;
@@ -30,7 +29,6 @@ interface LobbyContentProps {
 
 export function LobbyContent({
   roomCode,
-  isConnected,
   isJoined,
   players,
   playerId,

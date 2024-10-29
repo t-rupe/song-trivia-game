@@ -11,7 +11,6 @@ export default function RoomPage() {
   const params = useParams();
   const roomCode = params?.roomcode as string;
   const [gamePhase, setGamePhase] = useState<GamePhase>("lobby");
-  const [isConnected, setIsConnected] = useState(false);
   const [isJoined, setIsJoined] = useState(false);
   const [players, setPlayers] = useState<BasePlayer[]>([]);
   const [playerId, setPlayerId] = useState<string | null>(null);
@@ -28,26 +27,24 @@ export default function RoomPage() {
       console.log("No room code provided");
       return;
     }
-  
+
     console.log("Initializing socket connection for room:", roomCode);
     const socket = initSocket();
-  
+
     const onConnect = () => {
       console.log("Socket connected, setting states...");
-      setIsConnected(true);
       setConnectionStatus("connected");
       console.log("Emitting joinRoom event for room:", roomCode);
       socket.emit("joinRoom", roomCode);
     };
-  
+
     const onDisconnect = () => {
       console.log("Socket disconnected, resetting states...");
-      setIsConnected(false);
       setIsJoined(false);
       setConnectionStatus("connecting");
       setPlayers([]); // Reset players on disconnect
     };
-  
+
     const onRoomJoined = (data: {
       message: string;
       currentPlayer: BasePlayer;
@@ -60,17 +57,23 @@ export default function RoomPage() {
       setPlayerId(data.currentPlayer.id);
       setPlayers(data.players);
       setGamePhase(data.gameState.phase);
-      
+
       // If rejoining during game over, restore the game over data
-      if (data.gameState.phase === 'gameOver' && data.gameState.finalStandings) {
+      if (
+        data.gameState.phase === "gameOver" &&
+        data.gameState.finalStandings
+      ) {
         setGameOverData({
           standings: data.gameState.finalStandings,
-          winner: data.gameState.finalStandings[0]
+          winner: data.gameState.finalStandings[0],
         });
       }
     };
-  
-    const onUserJoined = (data: { newPlayer: BasePlayer; players: BasePlayer[] }) => {
+
+    const onUserJoined = (data: {
+      newPlayer: BasePlayer;
+      players: BasePlayer[];
+    }) => {
       console.log("User joined event received:", data);
       setPlayers(data.players);
     };
@@ -136,15 +139,17 @@ export default function RoomPage() {
       socket.off("game_over", onGameOver);
       socket.off("gameReset", onGameReset);
       socket.off("connect_error");
-      
+
       // Only disconnect if actually leaving the page/room
-      if (typeof window !== 'undefined' && !window.location.pathname.includes(roomCode)) {
+      if (
+        typeof window !== "undefined" &&
+        !window.location.pathname.includes(roomCode)
+      ) {
         console.log("Leaving room, disconnecting socket");
         socket.disconnect();
       }
     };
   }, [roomCode]);
-  
 
   const handleStartGame = () => {
     console.log("Attempting to start game for room:", roomCode);
@@ -157,7 +162,6 @@ export default function RoomPage() {
       {gamePhase === "lobby" && (
         <LobbyContent
           roomCode={roomCode}
-          isConnected={isConnected}
           isJoined={isJoined}
           players={players}
           playerId={playerId}
