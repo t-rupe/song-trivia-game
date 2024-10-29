@@ -423,6 +423,9 @@ app.prepare().then(() => {
 
       const isFirstPlayer = gameState.players.length === 0;
 
+      // TODO Stephanie, potentially might need to update this new player object to use different logic for name. Also, it'd be cool if you can change the avatar
+      // by clicking on it, it would refetch a new avatar from the dicebear API
+
       // Create new player
       const newPlayer = {
         id: socket.id,
