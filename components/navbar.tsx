@@ -32,7 +32,7 @@ export default function Navbar() {
     // Force a window reload after a short delay, for some reason the socket connection won't refresh with typical NextJs navigation (Link or router.push)
     setTimeout(() => {
       window.location.reload();
-    }, 100);
+    }, 500);
   };
 
   const handleCreateGame = async () => {
