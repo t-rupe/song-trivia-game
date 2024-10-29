@@ -10,7 +10,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Music, Users, Play, Wifi, WifiOff } from "lucide-react";
-import Link from "next/link";
 import { initSocket } from "../lib/socket";
 import { useRouter } from "next/navigation";
 
