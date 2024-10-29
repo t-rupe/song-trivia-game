@@ -98,11 +98,11 @@ export default function LobbyPage() {
   const pathname = usePathname();
 
   const copyRoomCode = async () => {
-    
+
     const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
   
     try {
-      await navigator.clipboard.writeText(`${baseUrl}${pathname}/${roomCode}`);
+      await navigator.clipboard.writeText(`${baseUrl}${pathname}`);
     } catch (err) {
       console.error("Failed to copy room code:", err);
     }
