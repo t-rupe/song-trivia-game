@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -95,15 +95,14 @@ export default function LobbyPage() {
   }, [roomCode]);
 
   const isHost = players.find((p) => p.id === playerId)?.isHost || false;
+  const pathname = usePathname();
 
   const copyRoomCode = async () => {
-    const apiUrl =
-      process.env.NODE_ENV === "production"
-        ? process.env.NEXT_PUBLIC_API_URL_PROD
-        : process.env.NEXT_PUBLIC_API_URL_DEV;
-
+    
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  
     try {
-      await navigator.clipboard.writeText(`${apiUrl}/room/${roomCode}`);
+      await navigator.clipboard.writeText(`${baseUrl}${pathname}/${roomCode}`);
     } catch (err) {
       console.error("Failed to copy room code:", err);
     }
