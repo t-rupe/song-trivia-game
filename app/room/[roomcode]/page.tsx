@@ -92,13 +92,18 @@ export default function LobbyPage() {
       socket.off("userLeft", onUserLeft);
       socket.disconnect();
     };
-  }, [roomCode]); 
+  }, [roomCode]);
 
   const isHost = players.find((p) => p.id === playerId)?.isHost || false;
 
   const copyRoomCode = async () => {
+    const apiUrl =
+      process.env.NODE_ENV === "production"
+        ? process.env.NEXT_PUBLIC_API_URL_PROD
+        : process.env.NEXT_PUBLIC_API_URL_DEV;
+
     try {
-      await navigator.clipboard.writeText(`http://localhost:3001/room/${roomCode}`);
+      await navigator.clipboard.writeText(`${apiUrl}/room/${roomCode}`);
     } catch (err) {
       console.error("Failed to copy room code:", err);
     }
