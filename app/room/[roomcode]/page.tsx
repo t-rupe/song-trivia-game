@@ -1,213 +1,178 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useParams, usePathname } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Copy, Users, Wifi, WifiOff } from "lucide-react";
+import { useParams } from "next/navigation";
+import { LobbyContent } from "@/components/lobby-content";
+import GameContent from "@/components/game-content";
+import GameOverContent from "@/components/game-over-content";
 import { initSocket } from "../../../lib/socket";
+import { BasePlayer, GamePlayer, GamePhase, GameState } from "@/types/game";
 
-interface Player {
-  id: string;
-  name: string;
-  avatar: string;
-  isHost: boolean;
-}
-
-export default function LobbyPage() {
+export default function RoomPage() {
   const params = useParams();
   const roomCode = params?.roomcode as string;
+  const [gamePhase, setGamePhase] = useState<GamePhase>("lobby");
   const [isConnected, setIsConnected] = useState(false);
   const [isJoined, setIsJoined] = useState(false);
-  const [players, setPlayers] = useState<Player[]>([]);
+  const [players, setPlayers] = useState<BasePlayer[]>([]);
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<
     "connecting" | "connected" | "joined"
   >("connecting");
-  const maxPlayers = 8;
+  const [gameOverData, setGameOverData] = useState<{
+    standings: GamePlayer[];
+    winner: GamePlayer;
+  } | null>(null);
 
   useEffect(() => {
-    if (!roomCode) return;
-
+    if (!roomCode) {
+      console.log("No room code provided");
+      return;
+    }
+  
+    console.log("Initializing socket connection for room:", roomCode);
     const socket = initSocket();
-
+  
     const onConnect = () => {
-      console.log("Socket connected");
+      console.log("Socket connected, setting states...");
       setIsConnected(true);
       setConnectionStatus("connected");
+      console.log("Emitting joinRoom event for room:", roomCode);
       socket.emit("joinRoom", roomCode);
     };
-
+  
     const onDisconnect = () => {
-      console.log("Socket disconnected");
+      console.log("Socket disconnected, resetting states...");
       setIsConnected(false);
       setIsJoined(false);
       setConnectionStatus("connecting");
+      setPlayers([]); // Reset players on disconnect
     };
-
+  
     const onRoomJoined = (data: {
       message: string;
-      currentPlayer: Player;
-      players: Player[];
+      currentPlayer: BasePlayer;
+      players: BasePlayer[];
+      gameState: GameState;
     }) => {
-      console.log("Room joined", data);
+      console.log("Room joined event received:", data);
       setIsJoined(true);
       setConnectionStatus("joined");
       setPlayerId(data.currentPlayer.id);
       setPlayers(data.players);
+      setGamePhase(data.gameState.phase);
+      
+      // If rejoining during game over, restore the game over data
+      if (data.gameState.phase === 'gameOver' && data.gameState.finalStandings) {
+        setGameOverData({
+          standings: data.gameState.finalStandings,
+          winner: data.gameState.finalStandings[0]
+        });
+      }
     };
-
-    const onUserJoined = (data: { newPlayer: Player; players: Player[] }) => {
-      console.log("User joined", data);
+  
+    const onUserJoined = (data: { newPlayer: BasePlayer; players: BasePlayer[] }) => {
+      console.log("User joined event received:", data);
       setPlayers(data.players);
     };
 
-    const onUserLeft = (data: { id: string; players: Player[] }) => {
-      console.log("User left", data);
+    const onUserLeft = (data: { id: string; players: BasePlayer[] }) => {
+      console.log("User left event received:", data);
       setPlayers(data.players);
     };
+
+    const onGameStart = () => {
+      console.log("Game start event received");
+      setGamePhase("playing");
+    };
+
+    const onGameOver = (data: {
+      standings: GamePlayer[];
+      winner: GamePlayer;
+    }) => {
+      console.log("Game over received:", data);
+      setGameOverData(data);
+      setGamePhase("gameOver");
+    };
+
+    const onGameReset = (data: { phase: GamePhase; players: BasePlayer[] }) => {
+      console.log("Game reset received:", data);
+      setGamePhase(data.phase);
+      setPlayers(data.players);
+      setGameOverData(null);
+    };
+
+    // Add error event handler
+    socket.on("connect_error", (error) => {
+      console.error("Socket connection error:", error);
+      setConnectionStatus("connecting");
+    });
 
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
     socket.on("roomJoined", onRoomJoined);
     socket.on("userJoined", onUserJoined);
     socket.on("userLeft", onUserLeft);
+    socket.on("gameStart", onGameStart);
+    socket.on("game_over", onGameOver);
+    socket.on("gameReset", onGameReset);
 
     if (!socket.connected) {
+      console.log("Socket not connected, initiating connection...");
       socket.connect();
+    } else {
+      console.log("Socket already connected");
+      onConnect();
     }
 
     return () => {
+      console.log("Cleaning up socket event listeners...");
+      // Only remove event listeners, don't disconnect
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
       socket.off("roomJoined", onRoomJoined);
       socket.off("userJoined", onUserJoined);
       socket.off("userLeft", onUserLeft);
-      socket.disconnect();
+      socket.off("gameStart", onGameStart);
+      socket.off("game_over", onGameOver);
+      socket.off("gameReset", onGameReset);
+      socket.off("connect_error");
+      
+      // Only disconnect if actually leaving the page/room
+      if (typeof window !== 'undefined' && !window.location.pathname.includes(roomCode)) {
+        console.log("Leaving room, disconnecting socket");
+        socket.disconnect();
+      }
     };
   }, [roomCode]);
-
-  const isHost = players.find((p) => p.id === playerId)?.isHost || false;
-  const pathname = usePathname();
-
-  const copyRoomCode = async () => {
-
-    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
   
-    try {
-      await navigator.clipboard.writeText(`${baseUrl}${pathname}`);
-    } catch (err) {
-      console.error("Failed to copy room code:", err);
-    }
-  };
 
-  const startGame = () => {
-    if (!isHost || !isConnected) return;
+  const handleStartGame = () => {
+    console.log("Attempting to start game for room:", roomCode);
     const socket = initSocket();
     socket.emit("startGame", roomCode);
   };
 
-  const getConnectionDisplay = () => {
-    switch (connectionStatus) {
-      case "connecting":
-        return {
-          icon: <WifiOff className="h-6 w-6 text-red-500" />,
-          text: "Connecting to server...",
-        };
-      case "connected":
-        return {
-          icon: <Wifi className="h-6 w-6 text-yellow-500" />,
-          text: "Connected, joining room...",
-        };
-      case "joined":
-        return {
-          icon: <Wifi className="h-6 w-6 text-green-500" />,
-          text: "Connected to room",
-        };
-      default:
-        return {
-          icon: <WifiOff className="h-6 w-6 text-red-500" />,
-          text: "Connecting...",
-        };
-    }
-  };
-
-  const connectionDisplay = getConnectionDisplay();
-
   return (
     <div className="min-h-[calc(100vh-64px)] bg-gradient-to-b from-purple-600 to-blue-600 flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl">
-        <CardHeader>
-          <div className="flex items-center justify-center gap-2 mb-4">
-            {connectionDisplay.icon}
-            <span className="text-sm font-medium">
-              {connectionDisplay.text}
-            </span>
-          </div>
-          <CardTitle className="text-3xl font-bold text-center">
-            Lobby
-          </CardTitle>
-          <CardDescription className="text-center text-lg">
-            {isJoined
-              ? "Waiting for players to join..."
-              : "Connecting to room..."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center justify-center space-x-2">
-            <div className="text-2xl font-bold">{roomCode}</div>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={copyRoomCode}
-              disabled={!isJoined}
-            >
-              <Copy className="h-4 w-4" />
-            </Button>
-          </div>
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold flex items-center">
-              <Users className="mr-2" /> Players ({players.length}/{maxPlayers})
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {players.map((player) => (
-                <div key={player.id} className="flex items-center space-x-2">
-                  <Avatar>
-                    <AvatarImage src={player.avatar} alt={player.name} />
-                    <AvatarFallback>{player.name[0]}</AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col">
-                    <span>{player.name}</span>
-                    {player.isHost && (
-                      <span className="text-xs text-purple-500">Host</span>
-                    )}
-                    {player.id === playerId && (
-                      <span className="text-xs text-blue-500">(You)</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </CardContent>
-        <CardFooter className="flex justify-center">
-          <Button
-            size="lg"
-            className="w-full md:w-auto"
-            onClick={startGame}
-            disabled={!isHost || !isJoined || players.length < 2}
-          >
-            {isHost ? "Start Game" : "Waiting for host to start..."}
-          </Button>
-        </CardFooter>
-      </Card>
+      {gamePhase === "lobby" && (
+        <LobbyContent
+          roomCode={roomCode}
+          isConnected={isConnected}
+          isJoined={isJoined}
+          players={players}
+          playerId={playerId}
+          connectionStatus={connectionStatus}
+          onStartGame={handleStartGame}
+        />
+      )}
+      {gamePhase === "playing" && <GameContent />}
+      {gamePhase === "gameOver" && gameOverData && (
+        <GameOverContent
+          standings={gameOverData.standings}
+          winner={gameOverData.winner}
+          roomCode={roomCode}
+        />
+      )}
     </div>
   );
 }
