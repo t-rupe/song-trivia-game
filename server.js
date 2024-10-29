@@ -121,6 +121,9 @@ app.prepare().then(() => {
   });
 
   httpServer.listen(port, () => {
-    console.log(`> Ready on http://${hostname}:${port}`);
+    const apiUrl = process.env.NODE_ENV === 'production' 
+      ? process.env.NEXT_PUBLIC_API_URL_PROD 
+      : process.env.NEXT_PUBLIC_API_URL_DEV;
+    console.log(`> Ready on ${apiUrl}`);
   });
 });
