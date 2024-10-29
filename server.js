@@ -10,22 +10,42 @@ const app = next({ dev, hostname, port });
 const handle = app.getRequestHandler();
 
 // Track rooms and their players
-const rooms = new Map();
+const gameRooms = new Map(); // Renamed to avoid conflict
+const socketToRoom = new Map(); // Add tracking for cleanup
 
 app.prepare().then(() => {
   const httpServer = createServer(handle);
-  const io = new Server(httpServer);
+  const io = new Server(httpServer, {
+    // Add configuration for better reconnection handling
+    pingTimeout: 60000,
+    pingInterval: 25000
+  });
 
   io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
 
     socket.on('joinRoom', (roomCode) => {
-      // Initialize room if it doesn't exist
-      if (!rooms.has(roomCode)) {
-        rooms.set(roomCode, []);
+      // Cleanup previous room if exists
+      const prevRoom = socketToRoom.get(socket.id);
+      if (prevRoom) {
+        socket.leave(prevRoom);
+        const prevPlayers = gameRooms.get(prevRoom);
+        if (prevPlayers) {
+          const updated = prevPlayers.filter(p => p.id !== socket.id);
+          if (updated.length === 0) {
+            gameRooms.delete(prevRoom);
+          } else {
+            gameRooms.set(prevRoom, updated);
+          }
+        }
       }
 
-      const roomPlayers = rooms.get(roomCode);
+      // Initialize room if it doesn't exist
+      if (!gameRooms.has(roomCode)) {
+        gameRooms.set(roomCode, []);
+      }
+
+      const roomPlayers = gameRooms.get(roomCode);
       const isFirstPlayer = roomPlayers.length === 0;
 
       // Create new player
@@ -38,7 +58,8 @@ app.prepare().then(() => {
 
       // Add player to room
       roomPlayers.push(newPlayer);
-      rooms.set(roomCode, roomPlayers);
+      gameRooms.set(roomCode, roomPlayers);
+      socketToRoom.set(socket.id, roomCode); // Track which room this socket is in
 
       // Join the socket room
       socket.join(roomCode);
@@ -61,39 +82,41 @@ app.prepare().then(() => {
 
     // Handle user disconnecting
     socket.on('disconnecting', () => {
-      const rooms = Array.from(socket.rooms).filter((room) => room !== socket.id);
-      
-      rooms.forEach((roomCode) => {
-        const roomPlayers = rooms.get(roomCode);
-        if (!roomPlayers) return;
+      const currentRoomCode = socketToRoom.get(socket.id);
+      if (currentRoomCode) {
+        const roomPlayers = gameRooms.get(currentRoomCode);
+        if (roomPlayers) {
+          // Remove the disconnecting player
+          const updatedPlayers = roomPlayers.filter(player => player.id !== socket.id);
 
-        // Remove the disconnecting player
-        const updatedPlayers = roomPlayers.filter(player => player.id !== socket.id);
+          // If there are remaining players, reassign host if needed
+          if (updatedPlayers.length > 0 && !updatedPlayers.some(p => p.isHost)) {
+            updatedPlayers[0].isHost = true;
+          }
 
-        // If there are remaining players, reassign host if needed
-        if (updatedPlayers.length > 0 && !updatedPlayers.some(p => p.isHost)) {
-          updatedPlayers[0].isHost = true;
+          // Update or remove the room
+          if (updatedPlayers.length === 0) {
+            gameRooms.delete(currentRoomCode);
+          } else {
+            gameRooms.set(currentRoomCode, updatedPlayers);
+          }
+
+          // Notify others in the room
+          socket.to(currentRoomCode).emit('userLeft', {
+            id: socket.id,
+            players: updatedPlayers
+          });
+
+          console.log(`Socket ${socket.id} is leaving room ${currentRoomCode}`, updatedPlayers);
         }
-
-        // Update the rooms map
-        if (updatedPlayers.length === 0) {
-          rooms.delete(roomCode);
-        } else {
-          rooms.set(roomCode, updatedPlayers);
-        }
-
-        // Notify others in the room
-        socket.to(roomCode).emit('userLeft', {
-          id: socket.id,
-          players: updatedPlayers
-        });
-
-        console.log(`Socket ${socket.id} is leaving room ${roomCode}`, updatedPlayers);
-      });
+        socketToRoom.delete(socket.id);
+      }
     });
 
     socket.on('disconnect', () => {
       console.log('User disconnected:', socket.id);
+      // Clean up socketToRoom mapping
+      socketToRoom.delete(socket.id);
     });
   });
 

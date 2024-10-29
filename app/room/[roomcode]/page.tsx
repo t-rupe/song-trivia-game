@@ -98,7 +98,7 @@ export default function LobbyPage() {
 
   const copyRoomCode = async () => {
     try {
-      await navigator.clipboard.writeText(roomCode);
+      await navigator.clipboard.writeText(`http://localhost:3001/room/${roomCode}`);
     } catch (err) {
       console.error("Failed to copy room code:", err);
     }
