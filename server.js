@@ -114,27 +114,7 @@ app.prepare().then(() => {
     };
   }
 
-  /**
-   * *** OpenAI API Integration ***
-   * Generates multiple choice options for the song.
-   * This ensures that each round has plausible distractors.
-   */
-  async function generateOptions(correctTitle) {
-    // TODO: Shubhank to implement logic to generate distractor song titles
-    // Possible approach:
-    // 1. Use the OpenAI API to generate similar or plausible song titles.
-    // 2. Ensure no duplicates and include the correct title.
-    // 3. Shuffle the options before returning.
-
-    // Example Placeholder Options
-    const options = [
-      correctTitle,
-      "Whispers in the Wind",
-      "Shadows of the Night",
-      "Dreamscape Symphony",
-    ];
-    return shuffleArray(options);
-  }
+ 
 
   /**
    * *** startNewRound Function ***
@@ -188,7 +168,7 @@ app.prepare().then(() => {
       title: currentSongInfo.title, // Use title from OpenAI
       artist: currentSongInfo.artist, // Use artist from OpenAI
       correctAnswer: currentSongInfo.title,
-      options: await generateOptions(currentSongInfo.title), // Elissa to implement generateOptions if needed
+      options: await generateOptions(currentSongInfo.title), // Shubhank to implement generateOptions if needed
     };
 
     gameState.currentSong = formattedSong;
@@ -651,51 +631,6 @@ app.prepare().then(() => {
     });
   });
 
-  /**
-   * *** Placeholder Functions for Spotify and OpenAI Integration ***
-   * These functions are placeholders and need to be implemented by Elissa and Shubhank, respectively
-   */
-
-  /**
-   * Fetches a random song from Spotify API.
-   * @returns {Promise<Object>} Song data object
-   */
-  async function fetchRandomSongFromSpotify() {
-    // TODO: Elissa to implement Spotify API call here
-    // Example steps:
-    // 1. Authenticate with Spotify API using Client Credentials Flow.
-    // 2. Fetch a list of tracks based on certain criteria (genre, popularity, etc.).
-    // 3. Select a random track from the fetched list.
-    // 4. Return necessary song data (id, preview_url, name, artists).
-
-    // Example Placeholder Response
-    return {
-      id: "123456",
-      preview_url: "https://p.scdn.co/mp3-preview/example.mp3",
-    };
-  }
-
-  /**
-   * Generates multiple choice options for the song.
-   * @param {string} correctTitle - The correct song title
-   * @returns {Promise<Array<string>>} Array of song titles including the correct one and distractors
-   */
-  async function generateOptions(correctTitle) {
-    // TODO: Shubhank to implement logic to generate distractor song titles (the incorrect options meant to confuse players)
-    // Possible approach:
-    // 1. Use the OpenAI API to generate similar or plausible song titles.
-    // 2. Ensure no duplicates and include the correct title.
-    // 3. Shuffle the options before returning.
-
-    // Example Placeholder Options
-    const options = [
-      correctTitle,
-      "Whispers in the Wind",
-      "Shadows of the Night",
-      "Dreamscape Symphony",
-    ];
-    return shuffleArray(options);
-  }
 
   httpServer.listen(port, () => {
     const apiUrl =
