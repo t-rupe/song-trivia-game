@@ -1,27 +1,57 @@
 "use client";
 
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
-import { initSocket } from '../lib/socket';
+import { initSocket, getSocket } from '../lib/socket';
 
 export function NavigationEvents() {
   const pathname = usePathname();
 
-  useEffect(() => {
-    const socket = initSocket();
+  const ensureSocketConnection = useCallback(() => {
+    let socket = getSocket();
+    if (!socket) {
+      socket = initSocket();
+    }
     
-    // Ensure socket is connected when needed
-    if (!socket.connected) {
+    // If socket exists but is disconnected, reconnect it
+    if (socket && !socket.connected) {
       socket.connect();
     }
 
-    return () => {
-      // Only disconnect if we're not on a room page
-      if (!pathname.startsWith('/room/')) {
-        socket.disconnect();
-      }
+    return socket;
+  }, []);
+
+  // Initial socket setup
+  useEffect(() => {
+    const socket = ensureSocketConnection();
+
+    const handleDisconnect = () => {
+      console.log('Socket disconnected - attempting reconnect...');
+      ensureSocketConnection();
     };
-  }, [pathname]);
+
+    socket.on('disconnect', handleDisconnect);
+
+    return () => {
+      socket.off('disconnect', handleDisconnect);
+    };
+  }, [ensureSocketConnection]);
+
+  // Handle navigation changes
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket?.connected) {
+      ensureSocketConnection();
+    }
+
+    // Handle room-specific logic
+    if (pathname.startsWith('/room/')) {
+      const roomCode = pathname.split('/').pop();
+      if (roomCode) {
+        // Handle room joining logic if needed
+      }
+    }
+  }, [pathname, ensureSocketConnection]);
 
   return null;
 }

@@ -54,6 +54,7 @@ function initializeGameState(roomCode) {
     roundTimeLeft: ROUND_TIME,
     answers: new Map(),
     finalStandings: null,
+    playerData: new Map(),
   };
 }
 
@@ -61,9 +62,10 @@ app.prepare().then(() => {
   const httpServer = createServer(handle);
   const io = new Server(httpServer, {
     cors: {
-      origin: process.env.NODE_ENV === "production"
-        ? process.env.NEXT_PUBLIC_API_URL_PROD
-        : "http://localhost:3001",
+      origin:
+        process.env.NODE_ENV === "production"
+          ? process.env.NEXT_PUBLIC_API_URL_PROD
+          : "http://localhost:3001",
       methods: ["GET", "POST"],
     },
     pingTimeout: 60000,
@@ -79,7 +81,9 @@ app.prepare().then(() => {
     }
 
     gameState.currentRound++;
-    console.log(`Round ${gameState.currentRound} starting for room ${roomCode}`);
+    console.log(
+      `Round ${gameState.currentRound} starting for room ${roomCode}`
+    );
 
     // Clear previous round data
     gameState.answers.clear();
@@ -93,24 +97,32 @@ app.prepare().then(() => {
     }
 
     // Mock song data with shuffled options
-    const options = ["Example Song", "Wrong Song 1", "Wrong Song 2", "Wrong Song 3"];
+    const options = [
+      "Example Song",
+      "Wrong Song 1",
+      "Wrong Song 2",
+      "Wrong Song 3",
+    ];
     const shuffledOptions = shuffleArray([...options]);
-    
+
     const mockSong = {
       id: Math.random().toString(),
       previewUrl: "https://example.com/song.mp3",
       title: "Example Song",
       artist: "Example Artist",
       correctAnswer: "Example Song",
-      options: shuffledOptions
+      options: shuffledOptions,
     };
 
     gameState.currentSong = mockSong;
 
-    console.log(`Broadcasting round ${gameState.currentRound} to all players in room ${roomCode}`, {
-      songData: mockSong,
-      playerCount: gameState.players.length
-    });
+    console.log(
+      `Broadcasting round ${gameState.currentRound} to all players in room ${roomCode}`,
+      {
+        songData: mockSong,
+        playerCount: gameState.players.length,
+      }
+    );
 
     // Verify game state before broadcasting
     if (!verifyGameState(io, roomCode)) {
@@ -123,7 +135,7 @@ app.prepare().then(() => {
     io.in(roomCode).emit("new_round", {
       roundNumber: gameState.currentRound,
       maxRounds: gameState.maxRounds,
-      song: mockSong
+      song: mockSong,
     });
 
     // Start the timer for this round
@@ -133,7 +145,11 @@ app.prepare().then(() => {
     }
 
     const timer = setInterval(() => {
-      if (!gameState || !gameState.roundTimeLeft || gameState.roundTimeLeft <= 0) {
+      if (
+        !gameState ||
+        !gameState.roundTimeLeft ||
+        gameState.roundTimeLeft <= 0
+      ) {
         clearInterval(timer);
         endRound(roomCode);
         return;
@@ -144,6 +160,108 @@ app.prepare().then(() => {
     }, 1000);
 
     roomTimers.set(roomCode, timer);
+  }
+
+  function handleNewConnection(socket, roomCode) {
+    console.log(`Socket ${socket.id} attempting to join room ${roomCode}`);
+
+    // Cleanup previous room if exists
+    const prevRoom = socketToRoom.get(socket.id);
+    if (prevRoom) {
+      handlePlayerLeaving(socket, prevRoom);
+    }
+
+    // Initialize or get room state
+    let gameState = gameRooms.get(roomCode);
+    if (!gameState) {
+      console.log(`Creating new game state for room ${roomCode}`);
+      gameState = initializeGameState(roomCode);
+      gameRooms.set(roomCode, gameState);
+    }
+
+    const isFirstPlayer = gameState.players.length === 0;
+
+    // Create new player
+    const newPlayer = {
+      id: socket.id,
+      name: `Player ${gameState.players.length + 1}`,
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${socket.id}`,
+      isHost: isFirstPlayer,
+      score: 0,
+    };
+
+    // Store player data for reconnection handling
+    gameState.playerData.set(socket.id, {
+      ...newPlayer,
+      joinTime: Date.now(),
+      lastActive: Date.now(),
+    });
+
+    // Add player to game state
+    gameState.players.push(newPlayer);
+    gameState.scores[socket.id] = 0;
+    socketToRoom.set(socket.id, roomCode);
+
+    // Join the socket room
+    socket.join(roomCode);
+
+    // Send current game state to the joining player
+    socket.emit("roomJoined", {
+      message: `You have joined room: ${roomCode}`,
+      currentPlayer: newPlayer,
+      players: gameState.players,
+      gameState: {
+        phase: gameState.phase,
+        currentRound: gameState.currentRound,
+        timeLeft: gameState.roundTimeLeft,
+        scores: gameState.scores,
+        finalStandings: gameState.finalStandings,
+      },
+    });
+
+    // If joining during an active game, send current round data
+    if (gameState.phase === "playing" && gameState.currentSong) {
+      socket.emit("new_round", {
+        roundNumber: gameState.currentRound,
+        maxRounds: gameState.maxRounds,
+        song: gameState.currentSong,
+      });
+      socket.emit("time_update", gameState.roundTimeLeft);
+    }
+
+    // Notify others in the room
+    socket.to(roomCode).emit("userJoined", {
+      newPlayer,
+      players: gameState.players,
+    });
+
+    // Set up disconnect handler for this connection
+    socket.on("disconnect", () => {
+      // Update last active timestamp
+      const playerData = gameState.playerData.get(socket.id);
+      if (playerData) {
+        playerData.lastActive = Date.now();
+        gameState.playerData.set(socket.id, playerData);
+      }
+
+      // Don't remove player data immediately on disconnect
+      // This allows for reconnection
+      setTimeout(() => {
+        // If player hasn't reconnected after timeout, clean up
+        const currentPlayerData = gameState.playerData.get(socket.id);
+        if (
+          currentPlayerData &&
+          currentPlayerData.lastActive === playerData.lastActive
+        ) {
+          console.log(
+            `Player ${socket.id} did not reconnect, cleaning up data`
+          );
+          gameState.playerData.delete(socket.id);
+        }
+      }, 120000); // 2 minute timeout for reconnection
+    });
+
+    console.log(`Room ${roomCode} updated players:`, gameState.players);
   }
 
   function endRound(roomCode) {
@@ -166,10 +284,12 @@ app.prepare().then(() => {
     io.in(roomCode).emit("round_end", {
       correctAnswer: gameState.currentSong.correctAnswer,
       scores: gameState.scores,
-      answers: Array.from(gameState.answers.entries()).map(([playerId, data]) => ({
-        player: gameState.players.find((p) => p.id === playerId),
-        ...data,
-      }))
+      answers: Array.from(gameState.answers.entries()).map(
+        ([playerId, data]) => ({
+          player: gameState.players.find((p) => p.id === playerId),
+          ...data,
+        })
+      ),
     });
 
     // Check if game should end
@@ -266,73 +386,72 @@ app.prepare().then(() => {
   io.on("connection", (socket) => {
     console.log("A user connected:", socket.id);
 
-    socket.on("joinRoom", (roomCode) => {
-      console.log(`Socket ${socket.id} attempting to join room ${roomCode}`);
+    // Handle rejoining rooms
+    socket.on("rejoinRoom", async ({ roomCode, playerId }) => {
+      console.log(`Player ${playerId} attempting to rejoin room ${roomCode}`);
 
-      // Cleanup previous room if exists
-      const prevRoom = socketToRoom.get(socket.id);
-      if (prevRoom) {
-        handlePlayerLeaving(socket, prevRoom);
-      }
-
-      // Initialize or get room state
-      let gameState = gameRooms.get(roomCode);
+      const gameState = gameRooms.get(roomCode);
       if (!gameState) {
-        console.log(`Creating new game state for room ${roomCode}`);
-        gameState = initializeGameState(roomCode);
-        gameRooms.set(roomCode, gameState);
+        socket.emit("roomError", { message: "Room not found" });
+        return;
       }
 
-      const isFirstPlayer = gameState.players.length === 0;
+      // If we have stored player data, restore it
+      const existingPlayerData = gameState.playerData.get(playerId);
+      if (existingPlayerData) {
+        // Update the player's new socket ID while preserving their data
+        const playerIndex = gameState.players.findIndex(
+          (p) => p.id === playerId
+        );
+        if (playerIndex !== -1) {
+          gameState.players[playerIndex].id = socket.id;
+          // Update scores
+          if (gameState.scores[playerId]) {
+            gameState.scores[socket.id] = gameState.scores[playerId];
+            delete gameState.scores[playerId];
+          }
+        }
 
-      // Create new player
-      const newPlayer = {
-        id: socket.id,
-        name: `Player ${gameState.players.length + 1}`,
-        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${socket.id}`,
-        isHost: isFirstPlayer,
-        score: 0,
-      };
+        socket.join(roomCode);
+        socketToRoom.set(socket.id, roomCode);
 
-      // Add player to game state
-      gameState.players.push(newPlayer);
-      gameState.scores[socket.id] = 0;
-      socketToRoom.set(socket.id, roomCode);
-
-      // Join the socket room
-      socket.join(roomCode);
-
-      // Send current game state to the joining player
-      socket.emit("roomJoined", {
-        message: `You have joined room: ${roomCode}`,
-        currentPlayer: newPlayer,
-        players: gameState.players,
-        gameState: {
-          phase: gameState.phase,
-          currentRound: gameState.currentRound,
-          timeLeft: gameState.roundTimeLeft,
-          scores: gameState.scores,
-          finalStandings: gameState.finalStandings,
-        },
-      });
-
-      // If joining during an active game, send current round data
-      if (gameState.phase === "playing" && gameState.currentSong) {
-        socket.emit("new_round", {
-          roundNumber: gameState.currentRound,
-          maxRounds: gameState.maxRounds,
-          song: gameState.currentSong
+        // Send current game state to rejoining player
+        socket.emit("roomRejoined", {
+          message: `Rejoined room: ${roomCode}`,
+          currentPlayer: { ...existingPlayerData, id: socket.id },
+          players: gameState.players,
+          gameState: {
+            phase: gameState.phase,
+            currentRound: gameState.currentRound,
+            timeLeft: gameState.roundTimeLeft,
+            scores: gameState.scores,
+            finalStandings: gameState.finalStandings,
+          },
         });
-        socket.emit("time_update", gameState.roundTimeLeft);
+
+        // If joining during an active game, send current round data
+        if (gameState.phase === "playing" && gameState.currentSong) {
+          socket.emit("new_round", {
+            roundNumber: gameState.currentRound,
+            maxRounds: gameState.maxRounds,
+            song: gameState.currentSong,
+          });
+          socket.emit("time_update", gameState.roundTimeLeft);
+        }
+
+        // Notify others
+        socket.to(roomCode).emit("userRejoined", {
+          player: { ...existingPlayerData, id: socket.id },
+          players: gameState.players,
+        });
+      } else {
+        // Handle as new connection if no existing data
+        handleNewConnection(socket, roomCode);
       }
+    });
 
-      // Notify others in the room
-      socket.to(roomCode).emit("userJoined", {
-        newPlayer,
-        players: gameState.players,
-      });
-
-      console.log(`Room ${roomCode} updated players:`, gameState.players);
+    socket.on("joinRoom", (roomCode) => {
+      handleNewConnection(socket, roomCode);
     });
 
     socket.on("startGame", async (roomCode) => {
@@ -366,7 +485,7 @@ app.prepare().then(() => {
 
     socket.on("submit_answer", ({ roomCode, answer }) => {
       const gameState = gameRooms.get(roomCode);
-      
+
       if (!gameState || gameState.phase !== "playing") {
         console.log("Cannot submit answer - invalid game state");
         return;
@@ -380,9 +499,12 @@ app.prepare().then(() => {
         });
 
         if (answer === gameState.currentSong.correctAnswer) {
-          const timeBonus = Math.floor((gameState.roundTimeLeft / ROUND_TIME) * 500);
+          const timeBonus = Math.floor(
+            (gameState.roundTimeLeft / ROUND_TIME) * 500
+          );
           const points = 1000 + timeBonus;
-          gameState.scores[socket.id] = (gameState.scores[socket.id] || 0) + points;
+          gameState.scores[socket.id] =
+            (gameState.scores[socket.id] || 0) + points;
 
           gameState.players = gameState.players.map((player) => {
             if (player.id === socket.id) {
@@ -468,98 +590,113 @@ app.prepare().then(() => {
       console.log("Cannot start round - game state not found");
       return;
     }
-  
+
     gameState.currentRound++;
-    console.log(`Round ${gameState.currentRound} starting for room ${roomCode}`);
-  
+    console.log(
+      `Round ${gameState.currentRound} starting for room ${roomCode}`
+    );
+
     // Clear previous round data
     gameState.answers.clear();
     gameState.roundTimeLeft = ROUND_TIME;
     gameState.roundStartTime = Date.now();
-  
+
     // Check if game should end
     if (gameState.currentRound > MAX_ROUNDS) {
       endGame(roomCode);
       return;
     }
-  
+
     // Mock song data with shuffled options
-    const options = ["Example Song", "Wrong Song 1", "Wrong Song 2", "Wrong Song 3"];
+    const options = [
+      "Example Song",
+      "Wrong Song 1",
+      "Wrong Song 2",
+      "Wrong Song 3",
+    ];
     const shuffledOptions = options.sort(() => Math.random() - 0.5);
-    
+
     const mockSong = {
       id: Math.random().toString(),
       previewUrl: "https://example.com/song.mp3",
       title: "Example Song",
       artist: "Example Artist",
       correctAnswer: "Example Song",
-      options: shuffledOptions
+      options: shuffledOptions,
     };
-  
+
     gameState.currentSong = mockSong;
-  
+
     // Log the broadcast attempt
-    console.log(`Broadcasting round ${gameState.currentRound} to all players in room ${roomCode}`, {
-      songData: mockSong,
-      playerCount: gameState.players.length
-    });
-  
+    console.log(
+      `Broadcasting round ${gameState.currentRound} to all players in room ${roomCode}`,
+      {
+        songData: mockSong,
+        playerCount: gameState.players.length,
+      }
+    );
+
     // Broadcast to ALL players in the room
     io.in(roomCode).emit("new_round", {
       roundNumber: gameState.currentRound,
       maxRounds: gameState.maxRounds,
-      song: mockSong
+      song: mockSong,
     });
-  
+
     // Start the timer for this round
     if (roomTimers.has(roomCode)) {
       clearInterval(roomTimers.get(roomCode));
       roomTimers.delete(roomCode);
     }
-  
+
     const timer = setInterval(() => {
-      if (!gameState || !gameState.roundTimeLeft || gameState.roundTimeLeft <= 0) {
+      if (
+        !gameState ||
+        !gameState.roundTimeLeft ||
+        gameState.roundTimeLeft <= 0
+      ) {
         clearInterval(timer);
         endRound(roomCode);
         return;
       }
-  
+
       gameState.roundTimeLeft--;
       io.in(roomCode).emit("time_update", gameState.roundTimeLeft);
     }, 1000);
-  
+
     roomTimers.set(roomCode, timer);
   }
-  
 
   function endRound(roomCode) {
     console.log("Ending round for room:", roomCode);
     const gameState = gameRooms.get(roomCode);
     if (!gameState) return;
-  
+
     // Clear round timer
     if (roomTimers.has(roomCode)) {
       clearInterval(roomTimers.get(roomCode));
       roomTimers.delete(roomCode);
     }
-  
+
     // Send round results to all players
     io.in(roomCode).emit("round_end", {
       correctAnswer: gameState.currentSong.correctAnswer,
       scores: gameState.scores,
-      answers: Array.from(gameState.answers.entries()).map(([playerId, data]) => ({
-        player: gameState.players.find((p) => p.id === playerId),
-        ...data,
-      }))
+      answers: Array.from(gameState.answers.entries()).map(
+        ([playerId, data]) => ({
+          player: gameState.players.find((p) => p.id === playerId),
+          ...data,
+        })
+      ),
     });
-  
+
     // Check if game should end
     if (gameState.currentRound >= MAX_ROUNDS) {
       console.log(`Maximum rounds (${MAX_ROUNDS}) reached, ending game`);
       endGame(roomCode);
       return;
     }
-  
+
     // Start next round after delay
     console.log(`Starting next round in 5 seconds for room ${roomCode}`);
     setTimeout(() => {
@@ -570,13 +707,15 @@ app.prepare().then(() => {
   function verifyGameState(roomCode) {
     const gameState = gameRooms.get(roomCode);
     if (!gameState) return false;
-  
+
     // Verify all players are still connected
-    const connectedPlayers = Array.from(io.sockets.adapter.rooms.get(roomCode) || []);
-    const validPlayers = gameState.players.filter(player => 
+    const connectedPlayers = Array.from(
+      io.sockets.adapter.rooms.get(roomCode) || []
+    );
+    const validPlayers = gameState.players.filter((player) =>
       connectedPlayers.includes(player.id)
     );
-  
+
     // Update player list if needed
     if (validPlayers.length !== gameState.players.length) {
       gameState.players = validPlayers;
@@ -585,21 +724,21 @@ app.prepare().then(() => {
         return false;
       }
     }
-  
+
     return true;
   }
-  
+
   function endGame(roomCode) {
     console.log("Ending game for room:", roomCode);
     const gameState = gameRooms.get(roomCode);
     if (!gameState) return;
-  
+
     // Clear any existing timers but DON'T disconnect players
     if (roomTimers.has(roomCode)) {
       clearInterval(roomTimers.get(roomCode));
       roomTimers.delete(roomCode);
     }
-  
+
     // Calculate final standings
     const standings = gameState.players
       .map((player) => ({
@@ -607,43 +746,45 @@ app.prepare().then(() => {
         finalScore: gameState.scores[player.id] || 0,
       }))
       .sort((a, b) => b.finalScore - a.finalScore);
-  
+
     // Store final standings in game state
     gameState.finalStandings = standings;
     gameState.phase = "gameOver";
-  
+
     // Notify all players of game end without forcing a disconnect
     io.in(roomCode).emit("game_over", {
       standings,
       winner: standings[0],
     });
-  
+
     // Keep the game state intact for the game over screen
     gameState.currentSong = null;
     gameState.answers.clear();
   }
-  
+
   function endRound(roomCode) {
     console.log("Ending round for room:", roomCode);
     const gameState = gameRooms.get(roomCode);
     if (!gameState) return;
-  
+
     // Clear round timer
     if (roomTimers.has(roomCode)) {
       clearInterval(roomTimers.get(roomCode));
       roomTimers.delete(roomCode);
     }
-  
+
     // Send round results to all players
     io.in(roomCode).emit("round_end", {
       correctAnswer: gameState.currentSong.correctAnswer,
       scores: gameState.scores,
-      answers: Array.from(gameState.answers.entries()).map(([playerId, data]) => ({
-        player: gameState.players.find((p) => p.id === playerId),
-        ...data,
-      }))
+      answers: Array.from(gameState.answers.entries()).map(
+        ([playerId, data]) => ({
+          player: gameState.players.find((p) => p.id === playerId),
+          ...data,
+        })
+      ),
     });
-  
+
     // Check if game should end
     if (gameState.currentRound >= MAX_ROUNDS) {
       console.log(`Maximum rounds (${MAX_ROUNDS}) reached, ending game`);

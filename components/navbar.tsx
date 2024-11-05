@@ -5,8 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { Music, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { initSocket } from "@/lib/socket";
 import { ModeToggle } from "@/components/dark-mode-toggle";
+import { JoinButton } from "./join-game-dialog";
+
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
@@ -17,39 +18,15 @@ export default function Navbar() {
     { name: "About", href: "/about" },
   ];
 
-  const handleNavigation = async (href: string) => {
+  const handleNavigation = (href: string) => {
     setIsOpen(false);
-
-    // Disconnect socket if it exists
-    const socket = initSocket();
-    if (socket.connected) {
-      socket.disconnect();
-    }
-
-    // Navigate first
-    await router.push(href);
-
-    // Force a window reload after a short delay, for some reason the socket connection won't refresh with typical NextJs navigation (Link or router.push)
-    setTimeout(() => {
-      window.location.reload();
-    }, 500);
+    router.push(href);
   };
 
-  const handleCreateGame = async () => {
+  const handleCreateGame = () => {
     setIsOpen(false);
-
-    const socket = initSocket();
-    if (socket.connected) {
-      socket.disconnect();
-    }
-
     const roomCode = generateRoomCode();
-    await router.push(`/room/${roomCode}`);
-
-    // Force a window reload after a short delay
-    setTimeout(() => {
-      window.location.reload();
-    }, 100);
+    router.push(`/room/${roomCode}`);
   };
 
   const generateRoomCode = () => {
@@ -93,10 +70,11 @@ export default function Navbar() {
               </div>
             </div>
           </div>
-          <div className="hidden md:flex space-x-8 items-center">
-            <Button variant="secondary" onClick={handleCreateGame}>
+          <div className="hidden md:flex space-x-4 items-center">
+            <Button variant="default" onClick={handleCreateGame}>
               Create Game
             </Button>
+            <JoinButton />
 
             <div className="pt-[2px]">
               <ModeToggle />
@@ -146,14 +124,15 @@ export default function Navbar() {
             ))}
           </div>
           <div className="pt-4 pb-3 border-t border-primary/20">
-            <div className="px-2">
+            <div className="px-2 space-y-2">
               <Button
-                variant="secondary"
+                variant="default"
                 className="w-full"
                 onClick={handleCreateGame}
               >
                 Create Game
               </Button>
+              <JoinButton />
             </div>
           </div>
         </div>

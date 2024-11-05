@@ -13,6 +13,7 @@ import {
 import { Music, Users, Play, Wifi, WifiOff } from "lucide-react";
 import { initSocket } from "../lib/socket";
 import { useRouter } from "next/navigation";
+import { JoinButton } from "@/components/join-game-dialog";
 
 export default function HomePage() {
   const [isConnected, setIsConnected] = useState(false);
@@ -112,17 +113,15 @@ export default function HomePage() {
             </div>
           </div>
         </CardContent>
-        <CardFooter className="flex justify-center">
-          <Button
-            size="lg"
-            className="w-full md:w-auto"
-            onClick={createLobby}
-            disabled={!isConnected}
-          >
-            Create a Lobby
-          </Button>
+        <CardFooter className="flex justify-center px-2">
+          <div className="flex items-center space-x-2">
+            <Button size="lg" onClick={createLobby} disabled={!isConnected}>
+              Create a Lobby
+            </Button>
+            <JoinButton size="lg" />
+          </div>
         </CardFooter>
       </Card>
     </div>
   );
-};
+}

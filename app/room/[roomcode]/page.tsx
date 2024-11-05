@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { notFound, useParams } from "next/navigation";
 import { LobbyContent } from "@/components/lobby-content";
 import GameContent from "@/components/game-content";
 import GameOverContent from "@/components/game-over-content";
@@ -10,6 +10,10 @@ import { BasePlayer, GamePlayer, GamePhase, GameState } from "@/types/game";
 export default function RoomPage() {
   const params = useParams();
   const roomCode = params?.roomcode as string;
+
+  if (!roomCode || roomCode.length !== 4) {
+    notFound();
+  }
   const [gamePhase, setGamePhase] = useState<GamePhase>("lobby");
   const [isJoined, setIsJoined] = useState(false);
   const [players, setPlayers] = useState<BasePlayer[]>([]);
