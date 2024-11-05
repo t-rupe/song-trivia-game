@@ -60,14 +60,14 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-64px)] bg-gradient-to-b from-purple-600 to-blue-600 flex items-center justify-center p-4">
+    <div className="min-h-[calc(100vh-64px)] bg-primary flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl">
         <CardHeader>
           <div className="flex items-center justify-center gap-2">
             {isConnected ? (
               <Wifi className="h-6 w-6 text-green-500" />
             ) : (
-              <WifiOff className="h-6 w-6 text-red-500" />
+              <WifiOff className="h-6 w-6 text-destructive" />
             )}
             <span className="text-sm font-medium">
               {isConnected ? "Connected to server" : "Connecting..."}
@@ -92,21 +92,21 @@ export default function HomePage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="flex flex-col items-center text-center">
-              <Music className="h-12 w-12 mb-2 text-purple-600" />
+              <Music className="h-12 w-12 mb-2 text-primary" />
               <h3 className="font-semibold">Diverse Music</h3>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-muted-foreground">
                 From classics to current hits
               </p>
             </div>
             <div className="flex flex-col items-center text-center">
-              <Users className="h-12 w-12 mb-2 text-purple-600" />
+              <Users className="h-12 w-12 mb-2 text-primary" />
               <h3 className="font-semibold">Multiplayer</h3>
-              <p className="text-sm text-gray-600">Play with friends</p>
+              <p className="text-sm text-muted-foreground">Play with friends</p>
             </div>
             <div className="flex flex-col items-center text-center">
-              <Play className="h-12 w-12 mb-2 text-purple-600" />
+              <Play className="h-12 w-12 mb-2 text-primary" />
               <h3 className="font-semibold">Real-time Action</h3>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-muted-foreground">
                 Answer quickly to score the most points
               </p>
             </div>
@@ -125,4 +125,4 @@ export default function HomePage() {
       </Card>
     </div>
   );
-}
+};
