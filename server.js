@@ -64,7 +64,7 @@ app.prepare().then(() => {
     cors: {
       origin:
         process.env.NODE_ENV === "production"
-          ? process.env.NEXT_PUBLIC_API_URL_PROD
+          ? `https://songtrivia.us`
           : "http://localhost:3001",
       methods: ["GET", "POST"],
     },

@@ -6,17 +6,19 @@ let socket: Socket | null = null;
 export const initSocket = (): Socket => {
   const apiUrl =
     process.env.NODE_ENV === "production"
-      ? process.env.NEXT_PUBLIC_API_URL_PROD
-      : process.env.NEXT_PUBLIC_API_URL_DEV;
+      ? `https://songtrivia.us`
+      : "http://localhost:3001";
 
   if (!socket) {
     socket = io(apiUrl, {
       transports: ["websocket"],
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
-      timeout: 10000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
+      withCredentials: true,
     });
   } else if (!socket.connected) {
     socket.connect();
