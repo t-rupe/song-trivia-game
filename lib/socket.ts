@@ -18,7 +18,7 @@ export const initSocket = (): Socket => {
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       timeout: 20000,
-      withCredentials: true,
+      forceNew: true,
     });
   } else if (!socket.connected) {
     socket.connect();
