@@ -17,6 +17,10 @@ const roomTimers = new Map();
 const ROUND_TIME = 15; // seconds
 const MAX_ROUNDS = 3;
 
+// Spotify API credentials loaded from .env for security purposes
+const CLIENT_ID = process.env.CLIENT_ID;
+const CLIENT_SECRET = process.env.CLIENT_SECRET;
+
 // Helper Functions
 function shuffleArray(array) {
   for (let i = array.length - 1; i > 0; i--) {
@@ -841,6 +845,93 @@ app.prepare().then(() => {
     socket.leave(roomCode);
   }
 
+  /**
+   * *** Spotify API Integration *** 
+   * Fetch a random song snippet from Spotify API.
+   * These functions should interact with Spotify's API to retrieve song data.
+   */
+
+  /**
+   * This function will perform the Client Credentials oAuth2 flow 
+   * to request and store an access_token from the Spotify API
+   * Source: https://developer.spotify.com/documentation/web-api/tutorials/client-credentials-flow
+  */
+  async function requestToken(req, res) {
+    try {
+    // Make a fetch request to the Spotify API endpoint
+    const response = await fetch(`https://accounts.spotify.com/api/token`, {
+      method: 'POST',
+      headers: {
+        // Authorization must include the client_id and client_secret from the app's developer dashboard
+        'Authorization': 'Basic ' + (Buffer.from(CLIENT_ID + ':' + CLIENT_SECRET).toString('base64')),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        'grant_type': 'client_credentials',
+      }),
+    });
+    
+    // Throw an error if the response is not OK as expected
+    if (!response.ok) {
+      throw new Error(`HTTP error: Status ${response.status}`);
+    }
+
+    // Handle the access token if received
+    const data = await response.json();
+    const accessToken = data.access_token; // Extract the access token
+    console.log('Access Token:', accessToken); // Log it for debugging
+    res.json(data); // Send the data back to the client for use
+    
+    } catch (error) {
+      console.error('Error', error); // Log any errors for debugging
+      res.status(500).json({ error: error.toString() }); // Send error response
+    }
+  }
+
+  /**
+   * This function will request the Spotify ID for the chosen track
+   * based on the title and artist
+   * Adapted from: https://developer.spotify.com/documentation/web-api/reference/search
+   * 
+   * Example input from function not implemented yet:
+   * const title = "Like a Prayer";
+   * const artist = "Madonna";
+   * const accessToken = requestToken(req, res);
+   * 
+   * Example return:
+   * 
+  */
+  async function getTrackID(title, artist, accessToken) {
+    try {
+      const query = 'title:${encodedURIComponent(title)} artist:${encodedURIComponent(artist)}';
+      const response = await fetch(`https://api.spotify.com/v1.search?q=${query}$type=track`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+
+      // Throw an error if the response is not OK as expected
+      if (!response.ok) {
+        throw new Error(`Failed to fetch track ID: ${response.status}`);
+      }
+
+      const data = await response.json(); // Parse the response
+
+      if (data.tracks && data.tracks.items && data.tracks.items.length > 0) { // Did we get a valid response?
+        const trackID = data.tracks.items[0].id; // Extract the ID of the first matching track
+        return trackID; // Return the track ID
+      }
+      else { // We didn't get a valid response
+        console.log('Error: No track found with matching title and artist');
+        return null; // We don't want to get here
+      }
+    }
+    catch (error) {
+      console.error('Error in getTrackID: ', error.message);
+    }
+  }
+  
   httpServer.listen(port, () => {
     const apiUrl =
       process.env.NODE_ENV === "production"
