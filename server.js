@@ -856,35 +856,29 @@ app.prepare().then(() => {
    * to request and store an access_token from the Spotify API
    * Source: https://developer.spotify.com/documentation/web-api/tutorials/client-credentials-flow
   */
-  async function requestToken(req, res) {
+  async function getSpotifyToken() {
     try {
-    // Make a fetch request to the Spotify API endpoint
-    const response = await fetch(`https://accounts.spotify.com/api/token`, {
-      method: 'POST',
-      headers: {
-        // Authorization must include the client_id and client_secret from the app's developer dashboard
-        'Authorization': 'Basic ' + (Buffer.from(CLIENT_ID + ':' + CLIENT_SECRET).toString('base64')),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        'grant_type': 'client_credentials',
-      }),
-    });
-    
-    // Throw an error if the response is not OK as expected
-    if (!response.ok) {
-      throw new Error(`HTTP error: Status ${response.status}`);
-    }
-
-    // Handle the access token if received
-    const data = await response.json();
-    const accessToken = data.access_token; // Extract the access token
-    console.log('Access Token:', accessToken); // Log it for debugging
-    res.json(data); // Send the data back to the client for use
-    
+      const response = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + (Buffer.from(CLIENT_ID + ':' + CLIENT_SECRET).toString('base64')),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          'grant_type': 'client_credentials',
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error: Status ${response.status}`);
+      }
+  
+      const data = await response.json();
+      return data.access_token;
+      
     } catch (error) {
-      console.error('Error', error); // Log any errors for debugging
-      res.status(500).json({ error: error.toString() }); // Send error response
+      console.error('Error getting Spotify token:', error);
+      throw error;
     }
   }
 
