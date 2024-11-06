@@ -1,127 +1,184 @@
 "use client";
-
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Music, Users, Play, Wifi, WifiOff } from "lucide-react";
-import { initSocket } from "../lib/socket";
-import { useRouter } from "next/navigation";
-import { JoinButton } from "@/components/join-game-dialog";
+import { useParams } from "next/navigation";
+import { LobbyContent } from "@/components/lobby-content";
+import GameContent from "@/components/game-content";
+import GameOverContent from "@/components/game-over-content";
+import { initSocket } from "@/lib/socket";
+import { BasePlayer, GamePlayer, GamePhase, GameState } from "@/types/game";
 
-export default function HomePage() {
-  const [isConnected, setIsConnected] = useState(false);
-  const router = useRouter();
+export default function RoomPage() {
+  const params = useParams();
+  const roomCode = params?.roomcode as string;
+  const [gamePhase, setGamePhase] = useState<GamePhase>("lobby");
+  const [isJoined, setIsJoined] = useState(false);
+  const [players, setPlayers] = useState<BasePlayer[]>([]);
+  const [playerId, setPlayerId] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<
+    "connecting" | "connected" | "joined"
+  >("connecting");
+  const [gameOverData, setGameOverData] = useState<{
+    standings: GamePlayer[];
+    winner: GamePlayer;
+  } | null>(null);
+
+  const socket = initSocket();
 
   useEffect(() => {
-    const socket = initSocket();
+    if (!roomCode) {
+      console.log("No room code provided");
+      return;
+    }
+
+    console.log("Initializing socket connection for room:", roomCode);
+    
 
     const onConnect = () => {
-      setIsConnected(true);
-      console.log("Connected to server");
+      console.log("Socket connected, setting states...");
+      setConnectionStatus("connected");
+      console.log("Emitting joinRoom event for room:", roomCode);
+      socket.emit("joinRoom", roomCode);
     };
 
     const onDisconnect = () => {
-      setIsConnected(false);
-      console.log("Disconnected from server");
+      console.log("Socket disconnected, resetting states...");
+      setIsJoined(false);
+      setConnectionStatus("connecting");
+      setPlayers([]); // Reset players on disconnect
     };
+
+    const onRoomJoined = (data: {
+      message: string;
+      currentPlayer: BasePlayer;
+      players: BasePlayer[];
+      gameState: GameState;
+    }) => {
+      console.log("Room joined event received:", data);
+      setIsJoined(true);
+      setConnectionStatus("joined");
+      setPlayerId(data.currentPlayer.id);
+      setPlayers(data.players);
+      setGamePhase(data.gameState.phase);
+
+      // If rejoining during game over, restore the game over data
+      if (
+        data.gameState.phase === "gameOver" &&
+        data.gameState.finalStandings
+      ) {
+        setGameOverData({
+          standings: data.gameState.finalStandings,
+          winner: data.gameState.finalStandings[0],
+        });
+      }
+    };
+
+    const onUserJoined = (data: {
+      newPlayer: BasePlayer;
+      players: BasePlayer[];
+    }) => {
+      console.log("User joined event received:", data);
+      setPlayers(data.players);
+    };
+
+    const onUserLeft = (data: { id: string; players: BasePlayer[] }) => {
+      console.log("User left event received:", data);
+      setPlayers(data.players);
+    };
+
+    const onGameStart = () => {
+      console.log("Game start event received");
+      setGamePhase("playing");
+    };
+
+    const onGameOver = (data: {
+      standings: GamePlayer[];
+      winner: GamePlayer;
+    }) => {
+      console.log("Game over received:", data);
+      setGameOverData(data);
+      setGamePhase("gameOver");
+    };
+
+    const onGameReset = (data: { phase: GamePhase; players: BasePlayer[] }) => {
+      console.log("Game reset received:", data);
+      setGamePhase(data.phase);
+      setPlayers(data.players);
+      setGameOverData(null);
+    };
+
+    // Add error event handler
+    socket.on("connect_error", (error) => {
+      console.error("Socket connection error:", error);
+      setConnectionStatus("connecting");
+    });
 
     socket.on("connect", onConnect);
     socket.on("disconnect", onDisconnect);
+    socket.on("roomJoined", onRoomJoined);
+    socket.on("userJoined", onUserJoined);
+    socket.on("userLeft", onUserLeft);
+    socket.on("gameStart", onGameStart);
+    socket.on("game_over", onGameOver);
+    socket.on("gameReset", onGameReset);
 
-    // Cleanup on unmount
+    if (!socket.connected) {
+      console.log("Socket not connected, initiating connection...");
+      socket.connect();
+    } else {
+      console.log("Socket already connected");
+      onConnect();
+    }
+
     return () => {
+      console.log("Cleaning up socket event listeners...");
+      // Only remove event listeners, don't disconnect
       socket.off("connect", onConnect);
       socket.off("disconnect", onDisconnect);
-      socket.disconnect();
+      socket.off("roomJoined", onRoomJoined);
+      socket.off("userJoined", onUserJoined);
+      socket.off("userLeft", onUserLeft);
+      socket.off("gameStart", onGameStart);
+      socket.off("game_over", onGameOver);
+      socket.off("gameReset", onGameReset);
+      socket.off("connect_error");
+
+      // Only disconnect if actually leaving the page/room
+      if (
+        typeof window !== "undefined" &&
+        !window.location.pathname.includes(roomCode)
+      ) {
+        console.log("Leaving room, disconnecting socket");
+        socket.disconnect();
+      }
     };
-  }, []);
+  }, [roomCode]);
 
-  const generateRoomCode = () => {
-    const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let result = "";
-    for (let i = 0; i < 4; i++) {
-      result += characters.charAt(
-        Math.floor(Math.random() * characters.length)
-      );
-    }
-    return result;
-  };
-
-  const createLobby = () => {
-    if (!isConnected) return;
-    const roomCode = generateRoomCode();
-    router.push(`/room/${roomCode}`);
-  };
+  const handleStartGame = () => {
+    console.log("Attempting to start game for room:", roomCode);
+    socket.emit("startGame", roomCode);
+    };
 
   return (
-    <div className="min-h-[calc(100vh-64px)] bg-primary flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl">
-        <CardHeader>
-          <div className="flex items-center justify-center gap-2">
-            {isConnected ? (
-              <Wifi className="h-6 w-6 text-green-500" />
-            ) : (
-              <WifiOff className="h-6 w-6 text-destructive" />
-            )}
-            <span className="text-sm font-medium">
-              {isConnected ? "Connected to server" : "Connecting..."}
-            </span>
-          </div>
-          <CardTitle className="text-3xl font-bold text-center">
-            Song Trivia Challenge
-          </CardTitle>
-          <CardDescription className="text-center text-lg">
-            Test your music knowledge in real-time!
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <h2 className="text-xl font-semibold">How to Play:</h2>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Create a lobby or join an existing one</li>
-              <li>Listen to song snippets and guess the title or artist</li>
-              <li>Score points for correct answers and speed</li>
-              <li>Compete against friends in real-time</li>
-            </ul>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="flex flex-col items-center text-center">
-              <Music className="h-12 w-12 mb-2 text-primary" />
-              <h3 className="font-semibold">Diverse Music</h3>
-              <p className="text-sm text-muted-foreground">
-                From classics to current hits
-              </p>
-            </div>
-            <div className="flex flex-col items-center text-center">
-              <Users className="h-12 w-12 mb-2 text-primary" />
-              <h3 className="font-semibold">Multiplayer</h3>
-              <p className="text-sm text-muted-foreground">Play with friends</p>
-            </div>
-            <div className="flex flex-col items-center text-center">
-              <Play className="h-12 w-12 mb-2 text-primary" />
-              <h3 className="font-semibold">Real-time Action</h3>
-              <p className="text-sm text-muted-foreground">
-                Answer quickly to score the most points
-              </p>
-            </div>
-          </div>
-        </CardContent>
-        <CardFooter className="flex justify-center px-2">
-          <div className="flex items-center space-x-2">
-            <Button size="lg" onClick={createLobby} disabled={!isConnected}>
-              Create a Lobby
-            </Button>
-            <JoinButton size="lg" />
-          </div>
-        </CardFooter>
-      </Card>
+    <div className="min-h-[calc(100vh-64px)] bg-gradient-to-b from-purple-600 to-blue-600 flex items-center justify-center p-4">
+      {gamePhase === "lobby" && (
+        <LobbyContent
+          roomCode={roomCode}
+          isJoined={isJoined}
+          players={players}
+          playerId={playerId}
+          connectionStatus={connectionStatus}
+          onStartGame={handleStartGame}
+          socket={socket} // Pass the socket to LobbyContent
+        />
+      )}
+      {gamePhase === "playing" && <GameContent />}
+      {gamePhase === "gameOver" && gameOverData && (
+        <GameOverContent
+          standings={gameOverData.standings}
+          winner={gameOverData.winner}
+          roomCode={roomCode}
+        />
+      )}
     </div>
   );
 }
