@@ -1,3 +1,11 @@
+import OpenAI from "openai"; 
+// For privacy, I am using the SDK format to retrieve the key
+// Currently, using a personal paid account for API key usage
+// Creates an instance of the OpenAI client with the API key
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
 const { createServer } = require("http");
 const next = require("next");
 const { Server } = require("socket.io");
@@ -16,6 +24,13 @@ const roomTimers = new Map();
 
 const ROUND_TIME = 15; // seconds
 const MAX_ROUNDS = 3;
+
+// For now using, a fixed set of genres 
+const genres = [
+  "Pop", "Rock", "Hip-Hop", "Jazz", "Classical", "Blues", "R&B", "Soul", 
+  "Country", "Electronic", "Reggae", "Funk", "Disco", "Folk", "Metal", 
+  "Punk", "Alternative", "Indie Rock", "K-Pop"
+];
 
 // Helper Functions
 function shuffleArray(array) {
@@ -469,6 +484,30 @@ app.prepare().then(() => {
         return;
       }
 
+      /**
+       * *** OpenAI API Integration ***
+       * Fetch random songs when the game starts.
+       */
+      console.log("Fetching random Genre from OpenAI for the game");
+      const selectedGenre = getRandomGenre(); // Get a random genre
+      console.log(`Selected Genre: ${selectedGenre}`); 
+      const result = await getSongAndArtistByGenre(selectedGenre); // Get song and artist suggestion based on genre
+      console.log(result); // Log the final result
+      /* const songs = await fetchRandomSongsFromOpenAI(MAX_ROUNDS); */
+
+      if (!songs || songs.length !== MAX_ROUNDS) {
+        console.log("Failed to fetch the required number of songs from OpenAI");
+        // Handle error, possibly notify players and end the game
+        io.in(roomCode).emit("error", {
+          message: "Failed to fetch songs. Please try again later.",
+        });
+        cleanupRoom(roomCode);
+        return;
+      }
+
+      gameState.songList = songs; // Store the fetched songs in game state
+      console.log("Fetched songs from OpenAI:", songs);
+
       gameState.phase = "playing";
       gameState.currentRound = 0;
       gameState.scores = {};
@@ -841,6 +880,55 @@ app.prepare().then(() => {
     socket.leave(roomCode);
   }
 
+// Function to randomly select a genre
+  function getRandomGenre() {
+    const randomGenre = genres[Math.floor(Math.random() * genres.length)];
+    return randomGenre; 
+  }
+
+  // Function to split the string by '-' and remove quotes
+  function splitTitleAndArtist(input) {
+  // Remove double quotes
+  const cleanedInput = input.replace(/"/g, '');
+
+  // Split the string
+  const [songTitle, artistName] = cleanedInput.split(' - ');
+
+  console.log(`[splitTitleAndArtist]: ${songTitle}, ${artistName}`);
+  return [songTitle, artistName];
+  
+}
+
+  // Function to get a song and artist suggestion from OpenAI based on the genre
+  async function getSongAndArtistByGenre(genre) {
+    try 
+    {
+        const response = await openai.chat.completions.create({
+            messages: [{
+                role: "user",
+                content: `Suggest a random song and artist from the ${genre} genre. Format your response as follows: "Song Title - Artist Name".`
+            }],
+            // Currently, using GPT-4, might have to experiment with other models
+            model: "gpt-4o-mini",
+        });
+
+        // Extract song title and artist from the response
+        const songAndArtist = response.choices[0].message.content.trim(); 
+        // Split into title and artist using the new format
+        const [songTitle, artistName] = splitTitleAndArtist(songAndArtist);
+
+        console.log(`Track Title: ${songTitle}, Artist: ${artistName}`);
+        
+        // Return structured output with only song and artist name
+        // Should I return an array instead? 
+        return { song: songTitle, artist: artistName };
+    } 
+    catch (error) 
+    {
+        console.error("[Error]: Unable to generate a song", error);
+        return null;
+    } 
+} 
   httpServer.listen(port, () => {
     const apiUrl =
       process.env.NODE_ENV === "production"
