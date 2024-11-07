@@ -1,6 +1,12 @@
 "use client";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Trophy, Home, RotateCcw } from "lucide-react";
 import { initSocket } from "@/lib/socket";
@@ -13,7 +19,11 @@ interface GameOverContentProps {
   roomCode: string;
 }
 
-export default function GameOverContent({ standings, winner, roomCode }: GameOverContentProps) {
+export default function GameOverContent({
+  standings,
+  winner,
+  roomCode,
+}: GameOverContentProps) {
   const router = useRouter();
 
   const handlePlayAgain = () => {
@@ -26,27 +36,27 @@ export default function GameOverContent({ standings, winner, roomCode }: GameOve
     console.log("Returning to home");
     const socket = initSocket();
     socket.emit("leaveRoom", roomCode);
-    router.push('/');
+    router.push("/");
   };
 
   return (
     <Card className="w-full max-w-2xl">
       <CardHeader>
-        <CardTitle className="text-3xl font-bold text-center">Game Over</CardTitle>
+        <CardTitle className="text-3xl font-bold text-center">
+          Game Over
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="text-center">
           <Trophy className="w-16 h-16 mx-auto text-yellow-400" />
-          <p className="text-2xl font-semibold mt-4">
-            {winner.name} wins!
-          </p>
+          <p className="text-2xl font-semibold mt-4">{winner.name} wins!</p>
         </div>
         <div className="space-y-4">
           {standings.map((player, index) => (
-            <div 
-              key={player.id} 
+            <div
+              key={player.id}
               className={`flex items-center justify-between p-3 rounded-lg ${
-                index === 0 ? 'bg-yellow-100' : 'bg-gray-100'
+                index === 0 ? "bg-primary" : "bg-default"
               }`}
             >
               <div className="flex items-center space-x-3">
@@ -55,11 +65,17 @@ export default function GameOverContent({ standings, winner, roomCode }: GameOve
                   <AvatarFallback>{player.name[0]}</AvatarFallback>
                 </Avatar>
                 <div>
-                  <span className="font-semibold">{player.name}</span>
-                  {index === 0 && <span className="ml-2 text-yellow-600">👑</span>}
+                  <span className="font-semibold text-default">
+                    {player.name}
+                  </span>
+                  {index === 0 && (
+                    <span className="ml-2 text-yellow-600">👑</span>
+                  )}
                 </div>
               </div>
-              <span className="font-bold">{player.finalScore.toLocaleString()}</span>
+              <span className="font-bold">
+                {player.finalScore.toLocaleString()}
+              </span>
             </div>
           ))}
         </div>
