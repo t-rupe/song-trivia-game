@@ -78,6 +78,11 @@ app.prepare().then(() => {
    * When the game starts, fetch a list of random song names and artists using the OpenAI API.
    * The number of songs fetched should match the MAX_ROUNDS.
    */
+  
+  const OpenAI = require("openai");
+  const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+  });
   async function fetchRandomSongsFromOpenAI(numberOfSongs) {
     // TODO: Shubhank to implement OpenAI API call here
     // Example steps:
@@ -85,6 +90,34 @@ app.prepare().then(() => {
     // 2. Create a prompt that instructs OpenAI to generate random song names and artists.
     // 3. Make a request to OpenAI's API with the prompt as per their docs https://platform.openai.com/docs/libraries/node-js-library.
     // 4. Parse and return the generated song data.
+
+    const genres = [
+      "Pop", "Rock", "Hip-Hop", "Jazz", "Classical", "Blues", "R&B", "Soul", 
+      "Country", "Electronic", "Reggae", "Funk", "Disco", "Folk", "Metal", 
+      "Punk", "Alternative", "Indie Rock", "K-Pop"
+    ];
+
+    // Step 1: Randomly select a genre
+    const randomGenre = genres[Math.floor(Math.random() * genres.length)];
+    console.log(`[STEP 1] Selected Genre: ${randomGenre}`);
+
+    // Step 2: Send prompt to OpenAI API for a song and artist suggestion
+    try {
+      const response = await openai.completions.create({
+          model: "text-davinci-003",
+          prompt: `Suggest a random song title and artist from the ${randomGenre} genre.`,
+          max_tokens: 50,
+      });
+      
+      // Extract and clean up the song and artist name
+      const songAndArtist = response.choices[0].text.trim();
+      console.log(`Suggested Song and Artist: ${songAndArtist}`);
+      
+      return { genre: randomGenre, songAndArtist };
+    } catch (error) {
+        console.error("Error fetching song and artist:", error);
+        return { genre: randomGenre, songAndArtist: "No suggestion available" };
+    }
 
     // Example Placeholder Response
     return [
