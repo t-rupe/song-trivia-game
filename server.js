@@ -1,6 +1,7 @@
 const { createServer } = require("http");
 const next = require("next");
 const { Server } = require("socket.io");
+const axios = require("axios"); // For making HTTP requests to APIs
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "localhost";
@@ -189,6 +190,19 @@ app.prepare().then(() => {
       isHost: isFirstPlayer,
       score: 0,
     };
+
+   // Event to fetch a new avatar for the player
+socket.on("fetch_new_avatar", () => {
+  const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
+  socket.emit("new_avatar", { avatar: newAvatarUrl });
+});
+
+// Event to refresh avatar specifically for the current player
+socket.on("refresh_avatar", ({ playerId }) => {
+  const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
+  io.to(playerId).emit("updated_avatar", { playerId, avatar: newAvatarUrl });
+});
+ 
 
     // Store player data for reconnection handling
     gameState.playerData.set(socket.id, {

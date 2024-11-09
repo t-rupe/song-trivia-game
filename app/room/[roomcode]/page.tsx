@@ -26,6 +26,8 @@ export default function RoomPage() {
     winner: GamePlayer;
   } | null>(null);
 
+  const socket = initSocket();
+
   useEffect(() => {
     if (!roomCode) {
       console.log("No room code provided");
@@ -171,6 +173,7 @@ export default function RoomPage() {
           playerId={playerId}
           connectionStatus={connectionStatus}
           onStartGame={handleStartGame}
+          socket={socket} // Pass the socket to LobbyContent
         />
       )}
       {gamePhase === "playing" && <GameContent />}
