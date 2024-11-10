@@ -12,15 +12,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Copy, Users, Wifi, WifiOff } from "lucide-react";
 
 import { useState, useEffect } from "react";
-import { io } from "socket.io-client";
 
-const socket = io("http://localhost:3001"); // Update with actual server URL after testing
-
-// TODO Stephanie: You'd also want to import the Input component from the UI components
-// import { Input } from "@/components/ui/input";
 
 // AvatarSelector Component for the current player
-function AvatarSelector({ playerId, avatar, onNewAvatarClick }: any) {
+function AvatarSelector({avatar, onNewAvatarClick }: any) {
   return (
     <div className="flex flex-col items-center">
       {avatar ? (
@@ -70,15 +65,6 @@ export function LobbyContent({
   useEffect(() => {
     setUpdatedPlayers(players);
   }, [players]);
-
-  // TODO Stephanie: Add state to manage the new name input
-  // const [newName, setNewName] = useState("");
-
-  // TODO Stephanie: Function to handle name change submission
-  // const handleNameChange = () => {
-  //   // Implement the logic to update the player's name
-  //   //
-  // };
 
   const copyRoomCode = async () => {
     const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
@@ -173,16 +159,9 @@ export function LobbyContent({
               )}
                 <div className="flex flex-col">
                   {player.id === playerId ? (
-                    // TODO Stephanie: Allow the current user to edit their name also maybe update the UI to make it clear that the name is editable
+                    
                     <>
-                      {/* TODO Stephanie: Replace this span with an input field */}
-                      {/* <Input
-                        value={newName}
-                        onChange={(e) => setNewName(e.target.value)}
-                        placeholder="Enter new name"
-                      /> */}
-                      {/* TODO Stephanie: Add a button to submit the new name */}
-                      {/* <Button onClick={handleNameChange}>Change Name</Button> */}
+                      
                     </>
                   ) : (
                     <span>{player.name}</span>
