@@ -212,6 +212,14 @@ socket.on("setMaxRounds", ({ roomCode, maxRounds }) => {
     io.in(roomCode).emit("maxRoundsUpdated", maxRounds); // Notify players
   }
 });
+
+  // Event to handle the initial game state request
+  socket.on("get_initial_game_state", ({ roomCode }) => {
+  const gameState = gameRooms.get(roomCode);
+  if (gameState) {
+    socket.emit("initial_game_state", { maxRounds: gameState.maxRounds });
+  }
+  });
  
 
     // Store player data for reconnection handling
