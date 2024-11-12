@@ -42,13 +42,13 @@ function cleanupRoom(roomCode) {
   }
 }
 
-function initializeGameState(roomCode) {
+function initializeGameState(roomCode, maxRounds = MAX_ROUNDS) {
   return {
     roomCode,
     phase: "lobby",
     players: [],
     currentRound: 0,
-    maxRounds: MAX_ROUNDS,
+    maxRounds,
     scores: {},
     currentSong: null,
     roundStartTime: null,
@@ -92,7 +92,7 @@ app.prepare().then(() => {
     gameState.roundStartTime = Date.now();
 
     // Check if game should end
-    if (gameState.currentRound > MAX_ROUNDS) {
+    if (gameState.currentRound > gameState.maxRounds) {
       endGame(roomCode);
       return;
     }
@@ -163,7 +163,7 @@ app.prepare().then(() => {
     roomTimers.set(roomCode, timer);
   }
 
-  function handleNewConnection(socket, roomCode) {
+  function handleNewConnection(socket, roomCode, maxRounds) {
     console.log(`Socket ${socket.id} attempting to join room ${roomCode}`);
 
     // Cleanup previous room if exists
@@ -176,7 +176,7 @@ app.prepare().then(() => {
     let gameState = gameRooms.get(roomCode);
     if (!gameState) {
       console.log(`Creating new game state for room ${roomCode}`);
-      gameState = initializeGameState(roomCode);
+      gameState = initializeGameState(roomCode, maxRounds);
       gameRooms.set(roomCode, gameState);
     }
 
@@ -201,6 +201,16 @@ socket.on("fetch_new_avatar", () => {
 socket.on("refresh_avatar", ({ playerId }) => {
   const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
   io.to(playerId).emit("updated_avatar", { playerId, avatar: newAvatarUrl });
+});
+
+// Event to allow host to set max rounds
+socket.on("setMaxRounds", ({ roomCode, maxRounds }) => {
+  const gameState = gameRooms.get(roomCode);
+  if (gameState) {
+    gameState.maxRounds = maxRounds;
+    console.log(`Max rounds set to ${maxRounds} for room ${roomCode}`);
+    io.in(roomCode).emit("maxRoundsUpdated", maxRounds); // Notify players
+  }
 });
  
 
@@ -307,8 +317,8 @@ socket.on("refresh_avatar", ({ playerId }) => {
     });
 
     // Check if game should end
-    if (gameState.currentRound >= MAX_ROUNDS) {
-      console.log(`Maximum rounds (${MAX_ROUNDS}) reached, ending game`);
+    if (gameState.currentRound >= gameState.maxRounds) {
+      console.log(`Maximum rounds (${gameState.maxRounds}) reached, ending game`);
       endGame(roomCode);
       return;
     }
@@ -616,7 +626,7 @@ socket.on("refresh_avatar", ({ playerId }) => {
     gameState.roundStartTime = Date.now();
 
     // Check if game should end
-    if (gameState.currentRound > MAX_ROUNDS) {
+    if (gameState.currentRound > gameState.maxRounds) {
       endGame(roomCode);
       return;
     }
@@ -705,8 +715,8 @@ socket.on("refresh_avatar", ({ playerId }) => {
     });
 
     // Check if game should end
-    if (gameState.currentRound >= MAX_ROUNDS) {
-      console.log(`Maximum rounds (${MAX_ROUNDS}) reached, ending game`);
+    if (gameState.currentRound >= gameState.maxRounds) {
+      console.log(`Maximum rounds (${gameState.maxRounds}) reached, ending game`);
       endGame(roomCode);
       return;
     }
@@ -800,8 +810,8 @@ socket.on("refresh_avatar", ({ playerId }) => {
     });
 
     // Check if game should end
-    if (gameState.currentRound >= MAX_ROUNDS) {
-      console.log(`Maximum rounds (${MAX_ROUNDS}) reached, ending game`);
+    if (gameState.currentRound >= gameState.maxRounds) {
+      console.log(`Maximum rounds (${gameState.maxRounds}) reached, ending game`);
       // Don't start a new timer, just end the game
       endGame(roomCode);
     } else {

@@ -47,6 +47,8 @@ interface LobbyContentProps {
   connectionStatus: "connecting" | "connected" | "joined";
   onStartGame: () => void;
   socket: any;
+  maxRounds: number; 
+  onSetMaxRounds: (value: number) => void;
 }
 
 export function LobbyContent({
@@ -57,6 +59,8 @@ export function LobbyContent({
   connectionStatus,
   onStartGame,
   socket,
+  maxRounds,
+  onSetMaxRounds,
 }: LobbyContentProps)  {
   const maxPlayers = 8;
   const isHost = players.find((p) => p.id === playerId)?.isHost || false;
@@ -138,6 +142,22 @@ export function LobbyContent({
             <Copy className="h-4 w-4" />
           </Button>
         </div>
+        {isHost && (
+          <div className="flex flex-col items-center space-y-2">
+            <label htmlFor="maxRounds" className="text-sm font-medium">
+              Max Rounds
+            </label>
+            <input
+              type="number"
+              id="maxRounds"
+              value={maxRounds}
+              min={1}
+              max={10}
+              onChange={(e) => onSetMaxRounds(Number(e.target.value))}
+              className="border rounded px-2 py-1 text-center"
+            />
+          </div>
+        )}
         <div className="space-y-2">
           <h3 className="text-lg font-semibold flex items-center">
             <Users className="mr-2" /> Players ({players.length}/{maxPlayers})
