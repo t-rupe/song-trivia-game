@@ -855,6 +855,69 @@ socket.on("refresh_avatar", ({ playerId }) => {
     socket.leave(roomCode);
   }
 
+    /**
+   * *** YouTube API Integration *** 
+   * These functions should interact with the YouTube API to retrieve and play a song.
+   */
+
+  /**
+   * This funciton is responsible for sending a get request to the YouTube API
+   * for the given track title and artist and return the video id
+   */
+  async function getYouTubeId(song, artist) {
+    try {
+      const query = `${song} ${artist}`; // Query string to search youtube
+
+      const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
+        params: {
+          part: 'snippet',      // Request snippet info
+          q: query,             // Search query
+          type: 'video',        
+          key: apiKey,          // API Key from .env
+      },
+    });
+
+      if (response.data.items && response.data.items.length > 0) {
+        const videoID = response.data.items[0].id.videoId; // Extract the first match
+        return videoID; // Return the video id
+      } else {
+        throw new Error('Error: Could not return video for the given song and artist');
+      }
+    } catch (error) {
+      console.error('Could not fetch YouTube video Error:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * This function will take the gameState.songList from the openAI functions
+   * and search for the YouTube ID for each correct answer
+   * It will return a list of ID's for each correct answer that should be played in the frontend
+   */
+  async function correctAnswerSongList(gameState, YOUTUBE_API_KEY) {
+    const correctSongIds = [];
+
+    // Iterate through the entries in gameState.songList returned by openAI functions
+    for (const entry of gameState.songList) {
+      const { correctAnswer } = entry;
+
+      // Fetch the ID for every correct answer song
+      try {
+        const videoID = await getYouTubeId(correctAnswer.song, correctAnswer.artist, YOUTUBE_API_KEY);
+
+        correctSongIds.push({
+          song: correctAnswer.song,
+          artist: correctAnswer.artist,
+          videoId: videoID // Add the videoID
+        })
+      } catch (error) {
+        console.error(`Could not fetch videoID for ${correctAnswer.song} by ${correctAnswer.artist}`);
+      }
+    }
+
+    return correctSongIds; // Return the list for the frontend
+  }
+
   httpServer.listen(port, () => {
     const apiUrl =
       process.env.NODE_ENV === "production"
