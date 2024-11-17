@@ -18,6 +18,8 @@ const roomTimers = new Map();
 const ROUND_TIME = 15; // seconds
 const MAX_ROUNDS = 3;
 
+const youTubeApiKey = process.env.YOUTUBE_API_KEY;
+
 // Helper Functions
 function shuffleArray(array) {
   for (let i = array.length - 1; i > 0; i--) {
@@ -72,96 +74,6 @@ app.prepare().then(() => {
     pingTimeout: 60000,
     pingInterval: 25000,
   });
-
-  async function startNewRound(roomCode) {
-    console.log("Starting new round for room:", roomCode);
-    const gameState = gameRooms.get(roomCode);
-    if (!gameState) {
-      console.log("Cannot start round - game state not found");
-      return;
-    }
-
-    gameState.currentRound++;
-    console.log(
-      `Round ${gameState.currentRound} starting for room ${roomCode}`
-    );
-
-    // Clear previous round data
-    gameState.answers.clear();
-    gameState.roundTimeLeft = ROUND_TIME;
-    gameState.roundStartTime = Date.now();
-
-    // Check if game should end
-    if (gameState.currentRound > MAX_ROUNDS) {
-      endGame(roomCode);
-      return;
-    }
-
-    // Mock song data with shuffled options
-    const options = [
-      "Example Song",
-      "Wrong Song 1",
-      "Wrong Song 2",
-      "Wrong Song 3",
-    ];
-    const shuffledOptions = shuffleArray([...options]);
-
-    const mockSong = {
-      id: Math.random().toString(),
-      previewUrl: "https://example.com/song.mp3",
-      title: "Example Song",
-      artist: "Example Artist",
-      correctAnswer: "Example Song",
-      options: shuffledOptions,
-    };
-
-    gameState.currentSong = mockSong;
-
-    console.log(
-      `Broadcasting round ${gameState.currentRound} to all players in room ${roomCode}`,
-      {
-        songData: mockSong,
-        playerCount: gameState.players.length,
-      }
-    );
-
-    // Verify game state before broadcasting
-    if (!verifyGameState(io, roomCode)) {
-      console.log("Game state verification failed, cleaning up room");
-      cleanupRoom(roomCode);
-      return;
-    }
-
-    // Broadcast to ALL players in the room
-    io.in(roomCode).emit("new_round", {
-      roundNumber: gameState.currentRound,
-      maxRounds: gameState.maxRounds,
-      song: mockSong,
-    });
-
-    // Start the timer for this round
-    if (roomTimers.has(roomCode)) {
-      clearInterval(roomTimers.get(roomCode));
-      roomTimers.delete(roomCode);
-    }
-
-    const timer = setInterval(() => {
-      if (
-        !gameState ||
-        !gameState.roundTimeLeft ||
-        gameState.roundTimeLeft <= 0
-      ) {
-        clearInterval(timer);
-        endRound(roomCode);
-        return;
-      }
-
-      gameState.roundTimeLeft--;
-      io.in(roomCode).emit("time_update", gameState.roundTimeLeft);
-    }, 1000);
-
-    roomTimers.set(roomCode, timer);
-  }
 
   function handleNewConnection(socket, roomCode) {
     console.log(`Socket ${socket.id} attempting to join room ${roomCode}`);
@@ -621,31 +533,30 @@ socket.on("refresh_avatar", ({ playerId }) => {
       return;
     }
 
-    // Mock song data with shuffled options
-    const options = [
-      "Example Song",
-      "Wrong Song 1",
-      "Wrong Song 2",
-      "Wrong Song 3",
-    ];
-    const shuffledOptions = options.sort(() => Math.random() - 0.5);
+    // Set the currentSong to the corresponding item in correctSongIds
+    const currentSong = gameState.songList[gameState.currentRound - 1].correctAnswer;
 
-    const mockSong = {
-      id: Math.random().toString(),
-      previewUrl: "https://example.com/song.mp3",
-      title: "Example Song",
-      artist: "Example Artist",
-      correctAnswer: "Example Song",
-      options: shuffledOptions,
-    };
+    // Rather than just const currentSongID = await getYouTubeId(currentSong.song, currentSong.artist);
+    // Wrap the result from getYouTubeId in a try block to handle errors from getYouTubeId
+    let currentSongId;
+    try {
+      currentSongId = await await getYouTubeId(currentSong.song, currentSong.artist);
+    } catch (error) {
+      console.error("Error fetching YouTube ID for the current song:", error.message);
+      return; // Exit in this case
+    }
 
-    gameState.currentSong = mockSong;
+    if (!currentSong || !currentSongId) {
+      console.error("No song found for this round or no song ID found from YouTube");
+      return; // Exit in this case
+    }
 
     // Log the broadcast attempt
     console.log(
       `Broadcasting round ${gameState.currentRound} to all players in room ${roomCode}`,
       {
-        songData: mockSong,
+        songData: currentSong,
+        songId: currentSongId,
         playerCount: gameState.players.length,
       }
     );
@@ -654,7 +565,8 @@ socket.on("refresh_avatar", ({ playerId }) => {
     io.in(roomCode).emit("new_round", {
       roundNumber: gameState.currentRound,
       maxRounds: gameState.maxRounds,
-      song: mockSong,
+      song: currentSong,
+      songId: currentSongId,
     });
 
     // Start the timer for this round
@@ -855,11 +767,6 @@ socket.on("refresh_avatar", ({ playerId }) => {
     socket.leave(roomCode);
   }
 
-    /**
-   * *** YouTube API Integration *** 
-   * These functions should interact with the YouTube API to retrieve and play a song.
-   */
-
   /**
    * This funciton is responsible for sending a get request to the YouTube API
    * for the given track title and artist and return the video id
@@ -887,35 +794,6 @@ socket.on("refresh_avatar", ({ playerId }) => {
       console.error('Could not fetch YouTube video Error:', error.message);
       throw error;
     }
-  }
-
-  /**
-   * This function will take the gameState.songList from the openAI functions
-   * and search for the YouTube ID for each correct answer
-   * It will return a list of ID's for each correct answer that should be played in the frontend
-   */
-  async function correctAnswerSongList(gameState, YOUTUBE_API_KEY) {
-    const correctSongIds = [];
-
-    // Iterate through the entries in gameState.songList returned by openAI functions
-    for (const entry of gameState.songList) {
-      const { correctAnswer } = entry;
-
-      // Fetch the ID for every correct answer song
-      try {
-        const videoID = await getYouTubeId(correctAnswer.song, correctAnswer.artist, YOUTUBE_API_KEY);
-
-        correctSongIds.push({
-          song: correctAnswer.song,
-          artist: correctAnswer.artist,
-          videoId: videoID // Add the videoID
-        })
-      } catch (error) {
-        console.error(`Could not fetch videoID for ${correctAnswer.song} by ${correctAnswer.artist}`);
-      }
-    }
-
-    return correctSongIds; // Return the list for the frontend
   }
 
   httpServer.listen(port, () => {
