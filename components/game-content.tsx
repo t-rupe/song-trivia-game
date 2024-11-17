@@ -24,12 +24,19 @@ interface Player {
   score: number;
 }
 
+declare global {
+  interface Window {
+    YT: any;
+  }
+}
+
 export default function GameContent() {
   const params = useParams();
   const roomCode = params?.roomcode as string;
   const [currentRound, setCurrentRound] = useState(0);
   const [maxRounds, setMaxRounds] = useState(10);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
+  const [songId, setCurrentSongId] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [lastAnswerResult, setLastAnswerResult] = useState<{
@@ -38,6 +45,36 @@ export default function GameContent() {
   } | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
 
+  // Check that the YouTube API is available before a round starts
+  useEffect(() => {
+    const waitForYouTubeAPI = new Promise<void>((resolve) => {
+      const interval = setInterval(() => {
+        if (window.YT) {
+          clearInterval(interval);
+          resolve();
+        }
+      }, 100);
+    });
+    
+    waitForYouTubeAPI.then(() => {
+      console.log("YouTube API is ready");
+    });
+  }, []);
+
+  // Load the YouTube API
+  useEffect(() => {
+    const loadYouTubeApi = () => {
+      const script = document.createElement("script");
+      script.src = "https://www.youtube.com/iframe_api";
+      script.async = true;
+      script.onload = () => {
+        console.log("YouTube Iframe API loaded");
+      };
+      document.body.appendChild(script);
+    };
+    loadYouTubeApi();
+  }, []);
+
   useEffect(() => {
     const socket = initSocket();
 
@@ -45,15 +82,58 @@ export default function GameContent() {
       roundNumber: number;
       maxRounds: number;
       song: Song;
+      songId: string;
     }) => {
       console.log('New round received:', data);
       setCurrentRound(data.roundNumber);
       setMaxRounds(data.maxRounds);
       setCurrentSong(data.song);
+      setCurrentSongId(data.songId);
       setSelectedAnswer(null);
       setLastAnswerResult(null);
+
+      // On new round, trigger the YouTube player
+      if (data.songId) {
+        startYouTubePlayer(data.songId);
+      }
     };
 
+    // Start the song from the YouTube API
+    const startYouTubePlayer = (songId: string) => {
+      if (window.YT) {
+        const player = new YT.Player("audio-player", {
+          videoId: songId,
+          playerVars: {
+            controls: 0, // Do not show controls to players
+            modestbranding: 1,
+            fs: 0,
+            iv_load_policy: 3,
+            autoplay: 1,
+            mute: 0,
+          },
+          events: {
+            onReady: (event: YT.PlayerEvent) => {
+              console.log("Player ready, seek to 60 seconds..."); // Start the song 60 seconds into the video - buffer
+              event.target.seekTo(60, true);
+              event.target.playVideo();
+
+              setTimeout(() => {
+                event.target.stopVideo();
+                console.log("Stop playing song after 7 seconds");
+              }, 7000); // Pause the song after 7 seconds - remaining time is used for guessing
+            },
+            onStateChange: (event: YT.OnStateChangeEvent) => {
+              if (event.data === YT.PlayerState.ENDED) {
+                console.log("Song snippet is over")
+              }
+            },
+          },
+        });
+      } else {
+        console.error("YouTube API is not loaded");
+      }
+    };
+    
     const onTimeUpdate = (time: number) => {
       setTimeLeft(time);
     };
@@ -103,6 +183,9 @@ export default function GameContent() {
         </CardTitle>
       </CardHeader>
       <CardContent>
+        {/* Invisible YouTube Player */}
+        <div id="audio-player" style={{ display: "none" }}></div>
+
         {/* Fixed height container for main content */}
         <div className="space-y-6 min-h-[400px]">
           {/* Timer and Now Playing section */}
