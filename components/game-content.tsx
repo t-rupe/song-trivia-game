@@ -37,6 +37,8 @@ export default function GameContent() {
   const [maxRounds, setMaxRounds] = useState(10);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [songId, setCurrentSongId] = useState<string | null>(null);
+  const [message, setMessage] = useState("Now Playing");
+  const [isPlaying, setIsPlaying] = useState(false); // Can be used to populate other UI elements if needed
   const [timeLeft, setTimeLeft] = useState<number>(30);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
   const [lastAnswerResult, setLastAnswerResult] = useState<{
@@ -75,6 +77,49 @@ export default function GameContent() {
     loadYouTubeApi();
   }, []);
 
+  // Play the song from the YouTube API
+  const startYouTubePlayer = (songId: string) => {
+    if (window.YT) {
+      const player = new YT.Player("audio-player", {
+        videoId: songId,
+        playerVars: {
+          controls: 0, // Do not show controls to players
+          modestbranding: 1,
+          fs: 0,
+          iv_load_policy: 3,
+          autoplay: 1,
+          mute: 0,
+        },
+        events: {
+          onReady: (event: YT.PlayerEvent) => {
+            console.log("Player ready, seek to 60 seconds..."); // Start the song 60 seconds into the video - buffer
+            event.target.seekTo(60, true); // Skip to 60 seconds in
+            event.target.playVideo();
+
+            setIsPlaying(true);
+            setMessage("Now Playing..."); // Set the UI message to Now Playing
+
+            setTimeout(() => {
+              event.target.stopVideo();
+              console.log("Stop playing song after 7 seconds");
+              setIsPlaying(false);
+              setMessage("Snippet Ended...");
+            }, 7000); // Pause the song after 7 seconds - remaining time is used for guessing
+          },
+          onStateChange: (event: YT.OnStateChangeEvent) => {
+            if (event.data === YT.PlayerState.ENDED) {
+              setIsPlaying(false);
+              setMessage("Waiting for New Round...");
+              console.log("Song is over for the round");
+            }
+          },
+        },
+      });
+    } else {
+      console.error("YouTube API is not loaded");
+    }
+  };
+
   useEffect(() => {
     const socket = initSocket();
 
@@ -95,42 +140,6 @@ export default function GameContent() {
       // On new round, trigger the YouTube player
       if (data.songId) {
         startYouTubePlayer(data.songId);
-      }
-    };
-
-    // Start the song from the YouTube API
-    const startYouTubePlayer = (songId: string) => {
-      if (window.YT) {
-        const player = new YT.Player("audio-player", {
-          videoId: songId,
-          playerVars: {
-            controls: 0, // Do not show controls to players
-            modestbranding: 1,
-            fs: 0,
-            iv_load_policy: 3,
-            autoplay: 1,
-            mute: 0,
-          },
-          events: {
-            onReady: (event: YT.PlayerEvent) => {
-              console.log("Player ready, seek to 60 seconds..."); // Start the song 60 seconds into the video - buffer
-              event.target.seekTo(60, true);
-              event.target.playVideo();
-
-              setTimeout(() => {
-                event.target.stopVideo();
-                console.log("Stop playing song after 7 seconds");
-              }, 7000); // Pause the song after 7 seconds - remaining time is used for guessing
-            },
-            onStateChange: (event: YT.OnStateChangeEvent) => {
-              if (event.data === YT.PlayerState.ENDED) {
-                console.log("Song snippet is over")
-              }
-            },
-          },
-        });
-      } else {
-        console.error("YouTube API is not loaded");
       }
     };
     
@@ -192,7 +201,8 @@ export default function GameContent() {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <Music className="w-6 h-6 text-purple-600" />
-              <span className="font-semibold">Now Playing</span>
+              {/* Dynamically display message */}
+              <span className= "font-semibold">{message}</span> 
             </div>
             <div className="flex items-center space-x-2">
               <span className="font-semibold">{timeLeft}s</span>
