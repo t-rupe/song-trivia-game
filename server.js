@@ -469,7 +469,7 @@ app.prepare().then(() => {
        * Fetch random songs when the game starts.
        */
       const rounds = []; // Store each round's data
-      for (let i = 0; i < MAX_ROUNDS; i++) {
+      for (let i = 0; i < maxRounds; i++) {
         const selectedGenre = getRandomGenre();
         const songSuggestions = await getSongAndArtistByGenre(
           selectedGenre,
@@ -497,7 +497,7 @@ app.prepare().then(() => {
       }
       console.log("All Rounds Data:", JSON.stringify(rounds, null, 2));
 
-      if (!rounds || rounds.length !== MAX_ROUNDS) {
+      if (!rounds || rounds.length !== maxRounds) {
         console.log(
           "Failed to fetch the required number of rounds from OpenAI"
         );
