@@ -1,4 +1,5 @@
 const OpenAI = require("openai");
+require('dotenv/config');
 // For privacy, I am using the SDK format to retrieve the key
 // Currently, using a personal paid account for API key usage
 // Creates an instance of the OpenAI client with the API key
@@ -28,12 +29,27 @@ const MAX_ROUNDS = 3;
 const NUM_OPTIONS = 4; // Total answer options per round, including 1 correct answer
 const RATE_LIMIT_DELAY = 1000; // Delay between requests in milliseconds
 
-
-// For now using, a fixed set of genres 
+// For now using, a fixed set of genres
 const genres = [
-  "Pop", "Rock", "Hip-Hop", "Jazz", "Classical", "Blues", "R&B", "Soul", 
-  "Country", "Electronic", "Reggae", "Funk", "Disco", "Folk", "Metal", 
-  "Punk", "Alternative", "Indie Rock", "K-Pop"
+  "Pop",
+  "Rock",
+  "Hip-Hop",
+  "Jazz",
+  "Classical",
+  "Blues",
+  "R&B",
+  "Soul",
+  "Country",
+  "Electronic",
+  "Reggae",
+  "Funk",
+  "Disco",
+  "Folk",
+  "Metal",
+  "Punk",
+  "Alternative",
+  "Indie Rock",
+  "K-Pop",
 ];
 
 // Helper Functions
@@ -209,18 +225,20 @@ app.prepare().then(() => {
       score: 0,
     };
 
-   // Event to fetch a new avatar for the player
-socket.on("fetch_new_avatar", () => {
-  const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
-  socket.emit("new_avatar", { avatar: newAvatarUrl });
-});
+    // Event to fetch a new avatar for the player
+    socket.on("fetch_new_avatar", () => {
+      const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
+      socket.emit("new_avatar", { avatar: newAvatarUrl });
+    });
 
-// Event to refresh avatar specifically for the current player
-socket.on("refresh_avatar", ({ playerId }) => {
-  const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
-  io.to(playerId).emit("updated_avatar", { playerId, avatar: newAvatarUrl });
-});
- 
+    // Event to refresh avatar specifically for the current player
+    socket.on("refresh_avatar", ({ playerId }) => {
+      const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
+      io.to(playerId).emit("updated_avatar", {
+        playerId,
+        avatar: newAvatarUrl,
+      });
+    });
 
     // Store player data for reconnection handling
     gameState.playerData.set(socket.id, {
@@ -508,7 +526,12 @@ socket.on("refresh_avatar", ({ playerId }) => {
       const rounds = []; // Store each round's data
       for (let i = 0; i < MAX_ROUNDS; i++) {
         const selectedGenre = getRandomGenre();
-        const songSuggestions = await getSongAndArtistByGenre(selectedGenre, NUM_OPTIONS);
+        const songSuggestions = await getSongAndArtistByGenre(
+          selectedGenre,
+          NUM_OPTIONS
+        );
+
+        console.log("Song Suggestions:", songSuggestions);
 
         // Skip round if there was an error or not enough suggestions returned
         if (!songSuggestions || songSuggestions.length < NUM_OPTIONS) continue;
@@ -516,22 +539,23 @@ socket.on("refresh_avatar", ({ playerId }) => {
         // First suggestion is the correct answer; others are incorrect answers
         const correctAnswer = songSuggestions[0];
         const incorrectAnswers = songSuggestions.slice(1);
-        console.log("incorrectAnswers", songSuggestions.slice(1)); 
+        console.log("incorrectAnswers", songSuggestions.slice(1));
 
         // Store the round data in the specified format
         rounds.push({
-            genre: selectedGenre,
-            correctAnswer,
-            incorrectAnswers
+          genre: selectedGenre,
+          correctAnswer,
+          incorrectAnswers,
         });
         // Introduce a delay after each round (before the next API call)
         await delay(RATE_LIMIT_DELAY);
       }
-      console.log("All Rounds Data:", JSON.stringify(rounds, null, 2)); 
-    
+      console.log("All Rounds Data:", JSON.stringify(rounds, null, 2));
 
       if (!rounds || rounds.length !== MAX_ROUNDS) {
-        console.log("Failed to fetch the required number of rounds from OpenAI");
+        console.log(
+          "Failed to fetch the required number of rounds from OpenAI"
+        );
         // Handle error, possibly notify players and end the game
         io.in(roomCode).emit("error", {
           message: "Failed to fetch all rounds. Please try again later.",
@@ -914,52 +938,56 @@ socket.on("refresh_avatar", ({ playerId }) => {
     socket.leave(roomCode);
   }
 
-// Function to randomly select a genre
+  // Function to randomly select a genre
   function getRandomGenre() {
-  const randomGenre = genres[Math.floor(Math.random() * genres.length)];
+    const randomGenre = genres[Math.floor(Math.random() * genres.length)];
 
-  console.log(`Selected Genre: ${randomGenre}`); 
-  return randomGenre; 
+    console.log(`Selected Genre: ${randomGenre}`);
+    return randomGenre;
   }
 
   function splitTitleAndArtist(responseText) {
-    return responseText.trim()
-        .split('\n')  // Split the response by newlines
-        .filter(line => line.includes(" - "))  // Only keep lines with ' - ', i.e., song-artist pairs
-        .map((line) => {
-            // Remove list number (e.g., "1. ") at the start of the line
-            const cleanedLine = line.replace(/^\d+\.\s*/, '').replace(/"/g, ''); // Remove numbers and quotes
-            const [songTitle, artistName] = cleanedLine.split(' - '); // Split into song and artist
-            return { song: songTitle.trim(), artist: artistName.trim() }; // Return an object
-        });
+    return responseText
+      .trim()
+      .split("\n") // Split the response by newlines
+      .filter((line) => line.includes(" - ")) // Only keep lines with ' - ', i.e., song-artist pairs
+      .map((line) => {
+        // Remove list number (e.g., "1. ") at the start of the line
+        const cleanedLine = line.replace(/^\d+\.\s*/, "").replace(/"/g, ""); // Remove numbers and quotes
+        const [songTitle, artistName] = cleanedLine.split(" - "); // Split into song and artist
+        return { song: songTitle.trim(), artist: artistName.trim() }; // Return an object
+      });
   }
   async function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   // Function to get a song and artist suggestion from OpenAI based on the genre
   async function getSongAndArtistByGenre(genre, numSongs) {
-    try 
-    {
-        const response = await openai.chat.completions.create({
-            messages: [{
-                role: "user",
-                content: `Suggest ${numSongs} random, unique song and artist pairs from the ${genre} genre. Format each as "Song Title - Artist Name", and separate them by new lines.`
-            }],
-            // Currently, using GPT-4, might have to experiment with other models
-            model: "gpt-4o-mini",
-        });
-        console.log(`OpenAI API Response: ${response.choices[0].message.content}`);
+    try {
+      const response = await openai.chat.completions.create({
+        messages: [
+          {
+            role: "user",
+            content: `Suggest ${numSongs} random, unique song and artist pairs from the ${genre} genre. Format each as "Song Title - Artist Name", and separate them by new lines.`,
+          },
+        ],
+        // Currently, using GPT-4, might have to experiment with other models
+        model: "gpt-4o-mini",
+      });
+      console.log(
+        `OpenAI API Response: ${response.choices[0].message.content}`
+      );
 
-        return splitTitleAndArtist(response.choices[0].message.content).slice(0, numSongs);
-
-    } 
-    catch (error) 
-    {
-        console.error("[Error]: Unable to generate a song", error);
-        return null;
+      return splitTitleAndArtist(response.choices[0].message.content).slice(
+        0,
+        numSongs
+      );
+    } catch (error) {
+      console.error("[Error]: Unable to generate a song", error);
+      return null;
     }
-  } 
+  }
   httpServer.listen(port, () => {
     const apiUrl =
       process.env.NODE_ENV === "production"
