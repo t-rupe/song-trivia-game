@@ -560,7 +560,7 @@ app.prepare().then(() => {
       gameState.songList[gameState.currentRound - 1].correctAnswer;
 
     // Rather than just const currentSongID = await getYouTubeId(currentSong.song, currentSong.artist);
-    // Wrap the result from getYouTubeId in a try block to handle errors from getYouTubeId
+    // Wrap the result from getYouTubeId in a try block to handle errors from getYoiouTubeId
     let currentSongId;
     try {
       currentSongId = await await getYouTubeId(
