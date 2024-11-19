@@ -80,7 +80,7 @@ export default function GameContent() {
   // Play the song from the YouTube API
   const startYouTubePlayer = (songId: string) => {
     if (window.YT) {
-      const player = new YT.Player("audio-player", {
+      const player = new window.YT.Player("audio-player", {
         videoId: songId,
         playerVars: {
           controls: 0, // Do not show controls to players

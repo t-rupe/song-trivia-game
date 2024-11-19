@@ -16,7 +16,7 @@ const socketToRoom = new Map();
 const roomTimers = new Map();
 
 const ROUND_TIME = 15; // seconds
-const MAX_ROUNDS = 3;
+const maxRounds = 3;
 
 const youTubeApiKey = process.env.YOUTUBE_API_KEY;
 
@@ -44,7 +44,7 @@ function cleanupRoom(roomCode) {
   }
 }
 
-function initializeGameState(roomCode, maxRounds = MAX_ROUNDS) {
+function initializeGameState(roomCode, maxRounds) {
   return {
     roomCode,
     phase: "lobby",
@@ -103,36 +103,38 @@ app.prepare().then(() => {
       score: 0,
     };
 
-   // Event to fetch a new avatar for the player
-socket.on("fetch_new_avatar", () => {
-  const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
-  socket.emit("new_avatar", { avatar: newAvatarUrl });
-});
+    // Event to fetch a new avatar for the player
+    socket.on("fetch_new_avatar", () => {
+      const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
+      socket.emit("new_avatar", { avatar: newAvatarUrl });
+    });
 
-// Event to refresh avatar specifically for the current player
-socket.on("refresh_avatar", ({ playerId }) => {
-  const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
-  io.to(playerId).emit("updated_avatar", { playerId, avatar: newAvatarUrl });
-});
+    // Event to refresh avatar specifically for the current player
+    socket.on("refresh_avatar", ({ playerId }) => {
+      const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
+      io.to(playerId).emit("updated_avatar", {
+        playerId,
+        avatar: newAvatarUrl,
+      });
+    });
 
-// Event to allow host to set max rounds
-socket.on("setMaxRounds", ({ roomCode, maxRounds }) => {
-  const gameState = gameRooms.get(roomCode);
-  if (gameState) {
-    gameState.maxRounds = maxRounds;
-    console.log(`Max rounds set to ${maxRounds} for room ${roomCode}`);
-    io.in(roomCode).emit("maxRoundsUpdated", maxRounds); // Notify players
-  }
-});
+    // Event to allow host to set max rounds
+    socket.on("setMaxRounds", ({ roomCode, maxRounds }) => {
+      const gameState = gameRooms.get(roomCode);
+      if (gameState) {
+        gameState.maxRounds = maxRounds;
+        console.log(`Max rounds set to ${maxRounds} for room ${roomCode}`);
+        io.in(roomCode).emit("maxRoundsUpdated", maxRounds); // Notify players
+      }
+    });
 
-  // Event to handle the initial game state request
-  socket.on("get_initial_game_state", ({ roomCode }) => {
-  const gameState = gameRooms.get(roomCode);
-  if (gameState) {
-    socket.emit("initial_game_state", { maxRounds: gameState.maxRounds });
-  }
-  });
- 
+    // Event to handle the initial game state request
+    socket.on("get_initial_game_state", ({ roomCode }) => {
+      const gameState = gameRooms.get(roomCode);
+      if (gameState) {
+        socket.emit("initial_game_state", { maxRounds: gameState.maxRounds });
+      }
+    });
 
     // Store player data for reconnection handling
     gameState.playerData.set(socket.id, {
@@ -238,7 +240,9 @@ socket.on("setMaxRounds", ({ roomCode, maxRounds }) => {
 
     // Check if game should end
     if (gameState.currentRound >= gameState.maxRounds) {
-      console.log(`Maximum rounds (${gameState.maxRounds}) reached, ending game`);
+      console.log(
+        `Maximum rounds (${gameState.maxRounds}) reached, ending game`
+      );
       endGame(roomCode);
       return;
     }
@@ -552,20 +556,29 @@ socket.on("setMaxRounds", ({ roomCode, maxRounds }) => {
     }
 
     // Set the currentSong to the corresponding item in correctSongIds
-    const currentSong = gameState.songList[gameState.currentRound - 1].correctAnswer;
+    const currentSong =
+      gameState.songList[gameState.currentRound - 1].correctAnswer;
 
     // Rather than just const currentSongID = await getYouTubeId(currentSong.song, currentSong.artist);
     // Wrap the result from getYouTubeId in a try block to handle errors from getYouTubeId
     let currentSongId;
     try {
-      currentSongId = await await getYouTubeId(currentSong.song, currentSong.artist);
+      currentSongId = await await getYouTubeId(
+        currentSong.song,
+        currentSong.artist
+      );
     } catch (error) {
-      console.error("Error fetching YouTube ID for the current song:", error.message);
+      console.error(
+        "Error fetching YouTube ID for the current song:",
+        error.message
+      );
       return; // Exit in this case
     }
 
     if (!currentSong || !currentSongId) {
-      console.error("No song found for this round or no song ID found from YouTube");
+      console.error(
+        "No song found for this round or no song ID found from YouTube"
+      );
       return; // Exit in this case
     }
 
@@ -636,7 +649,9 @@ socket.on("setMaxRounds", ({ roomCode, maxRounds }) => {
 
     // Check if game should end
     if (gameState.currentRound >= gameState.maxRounds) {
-      console.log(`Maximum rounds (${gameState.maxRounds}) reached, ending game`);
+      console.log(
+        `Maximum rounds (${gameState.maxRounds}) reached, ending game`
+      );
       endGame(roomCode);
       return;
     }
@@ -731,7 +746,9 @@ socket.on("setMaxRounds", ({ roomCode, maxRounds }) => {
 
     // Check if game should end
     if (gameState.currentRound >= gameState.maxRounds) {
-      console.log(`Maximum rounds (${gameState.maxRounds}) reached, ending game`);
+      console.log(
+        `Maximum rounds (${gameState.maxRounds}) reached, ending game`
+      );
       // Don't start a new timer, just end the game
       endGame(roomCode);
     } else {
@@ -793,23 +810,28 @@ socket.on("setMaxRounds", ({ roomCode, maxRounds }) => {
     try {
       const query = `${song} ${artist}`; // Query string to search youtube
 
-      const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
-        params: {
-          part: 'snippet',      // Request snippet info
-          q: query,             // Search query
-          type: 'video',        
-          key: apiKey,          // API Key from .env
-      },
-    });
+      const response = await axios.get(
+        "https://www.googleapis.com/youtube/v3/search",
+        {
+          params: {
+            part: "snippet", // Request snippet info
+            q: query, // Search query
+            type: "video",
+            key: apiKey, // API Key from .env
+          },
+        }
+      );
 
       if (response.data.items && response.data.items.length > 0) {
         const videoID = response.data.items[0].id.videoId; // Extract the first match
         return videoID; // Return the video id
       } else {
-        throw new Error('Error: Could not return video for the given song and artist');
+        throw new Error(
+          "Error: Could not return video for the given song and artist"
+        );
       }
     } catch (error) {
-      console.error('Could not fetch YouTube video Error:', error.message);
+      console.error("Could not fetch YouTube video Error:", error.message);
       throw error;
     }
   }
