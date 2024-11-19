@@ -26,6 +26,8 @@ export default function RoomPage() {
     winner: GamePlayer;
   } | null>(null);
 
+  const [maxRounds, setMaxRounds] = useState<number>(3); // default number of rounds is 3
+
   const socket = initSocket();
 
   useEffect(() => {
@@ -160,6 +162,7 @@ export default function RoomPage() {
   const handleStartGame = () => {
     console.log("Attempting to start game for room:", roomCode);
     const socket = initSocket();
+    socket.emit("setMaxRounds", { roomCode, maxRounds });
     socket.emit("startGame", roomCode);
   };
 
@@ -174,6 +177,8 @@ export default function RoomPage() {
           connectionStatus={connectionStatus}
           onStartGame={handleStartGame}
           socket={socket} // Pass the socket to LobbyContent
+          maxRounds={maxRounds} // New prop for maxRounds
+          onSetMaxRounds={setMaxRounds} // New prop for updating maxRounds
         />
       )}
       {gamePhase === "playing" && <GameContent />}

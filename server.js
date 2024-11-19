@@ -25,7 +25,7 @@ const socketToRoom = new Map();
 const roomTimers = new Map();
 
 const ROUND_TIME = 15; // seconds
-const MAX_ROUNDS = 3;
+const maxRounds = 3;
 const NUM_OPTIONS = 4; // Total answer options per round, including 1 correct answer
 const RATE_LIMIT_DELAY = 1000; // Delay between requests in milliseconds
 
@@ -52,6 +52,8 @@ const genres = [
   "K-Pop",
 ];
 
+const youTubeApiKey = process.env.YOUTUBE_API_KEY;
+
 // Helper Functions
 function shuffleArray(array) {
   for (let i = array.length - 1; i > 0; i--) {
@@ -76,13 +78,13 @@ function cleanupRoom(roomCode) {
   }
 }
 
-function initializeGameState(roomCode) {
+function initializeGameState(roomCode, maxRounds) {
   return {
     roomCode,
     phase: "lobby",
     players: [],
     currentRound: 0,
-    maxRounds: MAX_ROUNDS,
+    maxRounds,
     scores: {},
     currentSong: null,
     roundStartTime: null,
@@ -107,96 +109,6 @@ app.prepare().then(() => {
     pingInterval: 25000,
   });
 
-  async function startNewRound(roomCode) {
-    console.log("Starting new round for room:", roomCode);
-    const gameState = gameRooms.get(roomCode);
-    if (!gameState) {
-      console.log("Cannot start round - game state not found");
-      return;
-    }
-
-    gameState.currentRound++;
-    console.log(
-      `Round ${gameState.currentRound} starting for room ${roomCode}`
-    );
-
-    // Clear previous round data
-    gameState.answers.clear();
-    gameState.roundTimeLeft = ROUND_TIME;
-    gameState.roundStartTime = Date.now();
-
-    // Check if game should end
-    if (gameState.currentRound > MAX_ROUNDS) {
-      endGame(roomCode);
-      return;
-    }
-
-    // Mock song data with shuffled options
-    const options = [
-      "Example Song",
-      "Wrong Song 1",
-      "Wrong Song 2",
-      "Wrong Song 3",
-    ];
-    const shuffledOptions = shuffleArray([...options]);
-
-    const mockSong = {
-      id: Math.random().toString(),
-      previewUrl: "https://example.com/song.mp3",
-      title: "Example Song",
-      artist: "Example Artist",
-      correctAnswer: "Example Song",
-      options: shuffledOptions,
-    };
-
-    gameState.currentSong = mockSong;
-
-    console.log(
-      `Broadcasting round ${gameState.currentRound} to all players in room ${roomCode}`,
-      {
-        songData: mockSong,
-        playerCount: gameState.players.length,
-      }
-    );
-
-    // Verify game state before broadcasting
-    if (!verifyGameState(io, roomCode)) {
-      console.log("Game state verification failed, cleaning up room");
-      cleanupRoom(roomCode);
-      return;
-    }
-
-    // Broadcast to ALL players in the room
-    io.in(roomCode).emit("new_round", {
-      roundNumber: gameState.currentRound,
-      maxRounds: gameState.maxRounds,
-      song: mockSong,
-    });
-
-    // Start the timer for this round
-    if (roomTimers.has(roomCode)) {
-      clearInterval(roomTimers.get(roomCode));
-      roomTimers.delete(roomCode);
-    }
-
-    const timer = setInterval(() => {
-      if (
-        !gameState ||
-        !gameState.roundTimeLeft ||
-        gameState.roundTimeLeft <= 0
-      ) {
-        clearInterval(timer);
-        endRound(roomCode);
-        return;
-      }
-
-      gameState.roundTimeLeft--;
-      io.in(roomCode).emit("time_update", gameState.roundTimeLeft);
-    }, 1000);
-
-    roomTimers.set(roomCode, timer);
-  }
-
   function handleNewConnection(socket, roomCode) {
     console.log(`Socket ${socket.id} attempting to join room ${roomCode}`);
 
@@ -210,7 +122,7 @@ app.prepare().then(() => {
     let gameState = gameRooms.get(roomCode);
     if (!gameState) {
       console.log(`Creating new game state for room ${roomCode}`);
-      gameState = initializeGameState(roomCode);
+      gameState = initializeGameState(roomCode, maxRounds);
       gameRooms.set(roomCode, gameState);
     }
 
@@ -230,7 +142,38 @@ app.prepare().then(() => {
       const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
       socket.emit("new_avatar", { avatar: newAvatarUrl });
     });
+    // Event to fetch a new avatar for the player
+    socket.on("fetch_new_avatar", () => {
+      const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
+      socket.emit("new_avatar", { avatar: newAvatarUrl });
+    });
 
+    // Event to refresh avatar specifically for the current player
+    socket.on("refresh_avatar", ({ playerId }) => {
+      const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
+      io.to(playerId).emit("updated_avatar", {
+        playerId,
+        avatar: newAvatarUrl,
+      });
+    });
+
+    // Event to allow host to set max rounds
+    socket.on("setMaxRounds", ({ roomCode, maxRounds }) => {
+      const gameState = gameRooms.get(roomCode);
+      if (gameState) {
+        gameState.maxRounds = maxRounds;
+        console.log(`Max rounds set to ${maxRounds} for room ${roomCode}`);
+        io.in(roomCode).emit("maxRoundsUpdated", maxRounds); // Notify players
+      }
+    });
+
+    // Event to handle the initial game state request
+    socket.on("get_initial_game_state", ({ roomCode }) => {
+      const gameState = gameRooms.get(roomCode);
+      if (gameState) {
+        socket.emit("initial_game_state", { maxRounds: gameState.maxRounds });
+      }
+    });
     // Event to refresh avatar specifically for the current player
     socket.on("refresh_avatar", ({ playerId }) => {
       const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
@@ -343,8 +286,10 @@ app.prepare().then(() => {
     });
 
     // Check if game should end
-    if (gameState.currentRound >= MAX_ROUNDS) {
-      console.log(`Maximum rounds (${MAX_ROUNDS}) reached, ending game`);
+    if (gameState.currentRound >= gameState.maxRounds) {
+      console.log(
+        `Maximum rounds (${gameState.maxRounds}) reached, ending game`
+      );
       endGame(roomCode);
       return;
     }
@@ -699,36 +644,44 @@ app.prepare().then(() => {
     gameState.roundStartTime = Date.now();
 
     // Check if game should end
-    if (gameState.currentRound > MAX_ROUNDS) {
+    if (gameState.currentRound > gameState.maxRounds) {
       endGame(roomCode);
       return;
     }
 
-    // Mock song data with shuffled options
-    const options = [
-      "Example Song",
-      "Wrong Song 1",
-      "Wrong Song 2",
-      "Wrong Song 3",
-    ];
-    const shuffledOptions = options.sort(() => Math.random() - 0.5);
+    // Set the currentSong to the corresponding item in correctSongIds
+    const currentSong =
+      gameState.songList[gameState.currentRound - 1].correctAnswer;
 
-    const mockSong = {
-      id: Math.random().toString(),
-      previewUrl: "https://example.com/song.mp3",
-      title: "Example Song",
-      artist: "Example Artist",
-      correctAnswer: "Example Song",
-      options: shuffledOptions,
-    };
+    // Rather than just const currentSongID = await getYouTubeId(currentSong.song, currentSong.artist);
+    // Wrap the result from getYouTubeId in a try block to handle errors from getYoiouTubeId
+    let currentSongId;
+    try {
+      currentSongId = await await getYouTubeId(
+        currentSong.song,
+        currentSong.artist
+      );
+    } catch (error) {
+      console.error(
+        "Error fetching YouTube ID for the current song:",
+        error.message
+      );
+      return; // Exit in this case
+    }
 
-    gameState.currentSong = mockSong;
+    if (!currentSong || !currentSongId) {
+      console.error(
+        "No song found for this round or no song ID found from YouTube"
+      );
+      return; // Exit in this case
+    }
 
     // Log the broadcast attempt
     console.log(
       `Broadcasting round ${gameState.currentRound} to all players in room ${roomCode}`,
       {
-        songData: mockSong,
+        songData: currentSong,
+        songId: currentSongId,
         playerCount: gameState.players.length,
       }
     );
@@ -737,7 +690,8 @@ app.prepare().then(() => {
     io.in(roomCode).emit("new_round", {
       roundNumber: gameState.currentRound,
       maxRounds: gameState.maxRounds,
-      song: mockSong,
+      song: currentSong,
+      songId: currentSongId,
     });
 
     // Start the timer for this round
@@ -788,8 +742,10 @@ app.prepare().then(() => {
     });
 
     // Check if game should end
-    if (gameState.currentRound >= MAX_ROUNDS) {
-      console.log(`Maximum rounds (${MAX_ROUNDS}) reached, ending game`);
+    if (gameState.currentRound >= gameState.maxRounds) {
+      console.log(
+        `Maximum rounds (${gameState.maxRounds}) reached, ending game`
+      );
       endGame(roomCode);
       return;
     }
@@ -883,8 +839,10 @@ app.prepare().then(() => {
     });
 
     // Check if game should end
-    if (gameState.currentRound >= MAX_ROUNDS) {
-      console.log(`Maximum rounds (${MAX_ROUNDS}) reached, ending game`);
+    if (gameState.currentRound >= gameState.maxRounds) {
+      console.log(
+        `Maximum rounds (${gameState.maxRounds}) reached, ending game`
+      );
       // Don't start a new timer, just end the game
       endGame(roomCode);
     } else {
@@ -936,6 +894,40 @@ app.prepare().then(() => {
     }
 
     socket.leave(roomCode);
+  }
+
+  /**
+   * This funciton is responsible for sending a get request to the YouTube API
+   * for the given track title and artist and return the video id
+   */
+  async function getYouTubeId(song, artist) {
+    try {
+      const query = `${song} ${artist}`; // Query string to search youtube
+
+      const response = await axios.get(
+        "https://www.googleapis.com/youtube/v3/search",
+        {
+          params: {
+            part: "snippet", // Request snippet info
+            q: query, // Search query
+            type: "video",
+            key: apiKey, // API Key from .env
+          },
+        }
+      );
+
+      if (response.data.items && response.data.items.length > 0) {
+        const videoID = response.data.items[0].id.videoId; // Extract the first match
+        return videoID; // Return the video id
+      } else {
+        throw new Error(
+          "Error: Could not return video for the given song and artist"
+        );
+      }
+    } catch (error) {
+      console.error("Could not fetch YouTube video Error:", error.message);
+      throw error;
+    }
   }
 
   // Function to randomly select a genre

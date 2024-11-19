@@ -14,6 +14,8 @@ pnpm dev
 bun dev
 ```
 
+If you experience issues with the YouTube properties in game-content.tsx at run time run `npm install @types/youtube`
+
 Open [http://localhost:3001](http://localhost:3001) with your browser to see the result.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
