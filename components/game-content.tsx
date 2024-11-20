@@ -34,7 +34,7 @@ export default function GameContent() {
   const params = useParams();
   const roomCode = params?.roomcode as string;
   const [currentRound, setCurrentRound] = useState(0);
-  const [maxRounds, setMaxRounds] = useState(10);
+  const [maxRounds, setMaxRounds] = useState<number | null>(null);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [songId, setCurrentSongId] = useState<string | null>(null);
   const [message, setMessage] = useState("Now Playing");
@@ -130,6 +130,14 @@ export default function GameContent() {
   useEffect(() => {
     const socket = initSocket();
 
+    // Fetch initial game state when the component mounts
+    socket.emit("get_initial_game_state", { roomCode });
+
+    // Listen for the initial game state
+    socket.on("initial_game_state", (data: { maxRounds: number }) => {
+    setMaxRounds(data.maxRounds);
+    });
+
     const onNewRound = (data: {
       roundNumber: number;
       maxRounds: number;
@@ -196,7 +204,7 @@ export default function GameContent() {
     <Card className="w-full max-w-2xl">
       <CardHeader>
         <CardTitle className="text-2xl font-bold text-center">
-          Round {currentRound} of {maxRounds}
+        {maxRounds !== null ? `Round ${currentRound === 0 ? 1 : currentRound} of ${maxRounds}` : "Loading..."}
         </CardTitle>
       </CardHeader>
       <CardContent>
