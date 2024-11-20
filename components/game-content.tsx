@@ -111,7 +111,7 @@ export default function GameContent() {
               console.log("Stop playing song after 7 seconds");
               setIsPlaying(false);
               setMessage("Snippet Ended...");
-            }, 10000); // Pause the song after 7 seconds - remaining time is used for guessing
+            }, 10000); // Pause the song after 10 seconds - remaining time is used for guessing
           },
           onStateChange: (event: YT.OnStateChangeEvent) => {
             if (event.data === YT.PlayerState.ENDED) {
@@ -154,7 +154,7 @@ export default function GameContent() {
 
       // On new round, trigger the YouTube player
       if (data.songId) {
-        console.log("New round, initializing ytplayer with songId:", songId);
+        console.log("New round, initializing YouTube player with songId:", songId);
         startYouTubePlayer(data.songId);
       }
     };
