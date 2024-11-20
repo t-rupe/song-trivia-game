@@ -1,3 +1,9 @@
+const OpenAI = require("openai");
+require('dotenv/config');
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
 const { createServer } = require("http");
 const next = require("next");
 const { Server } = require("socket.io");
@@ -16,7 +22,32 @@ const socketToRoom = new Map();
 const roomTimers = new Map();
 
 const ROUND_TIME = 15; // seconds
-const MAX_ROUNDS = 3;
+const DEFAULT_MAX_ROUNDS = 3;
+const NUM_OPTIONS = 4; // Total answer options per round, including 1 correct answer
+const RATE_LIMIT_DELAY = 1000; // Delay between requests in milliseconds
+
+// Fixed set of genres
+const genres = [
+  "Pop",
+  "Rock",
+  "Hip-Hop",
+  "Jazz",
+  "Classical",
+  "Blues",
+  "R&B",
+  "Soul",
+  "Country",
+  "Electronic",
+  "Reggae",
+  "Funk",
+  "Disco",
+  "Folk",
+  "Metal",
+  "Punk",
+  "Alternative",
+  "Indie Rock",
+  "K-Pop",
+];
 
 const youTubeApiKey = process.env.YOUTUBE_API_KEY;
 
@@ -44,15 +75,16 @@ function cleanupRoom(roomCode) {
   }
 }
 
-function initializeGameState(roomCode) {
+function initializeGameState(roomCode, maxRounds) {
   return {
     roomCode,
     phase: "lobby",
     players: [],
     currentRound: 0,
-    maxRounds: MAX_ROUNDS,
+    maxRounds,
     scores: {},
     currentSong: null,
+    songList: [],
     roundStartTime: null,
     roundTimeLeft: ROUND_TIME,
     answers: new Map(),
@@ -75,6 +107,7 @@ app.prepare().then(() => {
     pingInterval: 25000,
   });
 
+  // Function to handle new connections and join rooms
   function handleNewConnection(socket, roomCode) {
     console.log(`Socket ${socket.id} attempting to join room ${roomCode}`);
 
@@ -88,7 +121,7 @@ app.prepare().then(() => {
     let gameState = gameRooms.get(roomCode);
     if (!gameState) {
       console.log(`Creating new game state for room ${roomCode}`);
-      gameState = initializeGameState(roomCode);
+      gameState = initializeGameState(roomCode, DEFAULT_MAX_ROUNDS);
       gameRooms.set(roomCode, gameState);
     }
 
@@ -103,18 +136,38 @@ app.prepare().then(() => {
       score: 0,
     };
 
-   // Event to fetch a new avatar for the player
-socket.on("fetch_new_avatar", () => {
-  const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
-  socket.emit("new_avatar", { avatar: newAvatarUrl });
-});
+    // Event to fetch a new avatar for the player
+    socket.on("fetch_new_avatar", () => {
+      const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
+      socket.emit("new_avatar", { avatar: newAvatarUrl });
+    });
 
-// Event to refresh avatar specifically for the current player
-socket.on("refresh_avatar", ({ playerId }) => {
-  const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
-  io.to(playerId).emit("updated_avatar", { playerId, avatar: newAvatarUrl });
-});
- 
+    // Event to refresh avatar specifically for the current player
+    socket.on("refresh_avatar", ({ playerId }) => {
+      const newAvatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`;
+      io.to(playerId).emit("updated_avatar", {
+        playerId,
+        avatar: newAvatarUrl,
+      });
+    });
+
+    // Event to allow host to set max rounds
+    socket.on("setMaxRounds", ({ roomCode, maxRounds }) => {
+      const gameState = gameRooms.get(roomCode);
+      if (gameState) {
+        gameState.maxRounds = maxRounds;
+        console.log(`Max rounds set to ${maxRounds} for room ${roomCode}`);
+        io.in(roomCode).emit("maxRoundsUpdated", maxRounds); // Notify players
+      }
+    });
+
+    // Event to handle the initial game state request
+    socket.on("get_initial_game_state", ({ roomCode }) => {
+      const gameState = gameRooms.get(roomCode);
+      if (gameState) {
+        socket.emit("initial_game_state", { maxRounds: gameState.maxRounds });
+      }
+    });
 
     // Store player data for reconnection handling
     gameState.playerData.set(socket.id, {
@@ -151,6 +204,7 @@ socket.on("refresh_avatar", ({ playerId }) => {
         roundNumber: gameState.currentRound,
         maxRounds: gameState.maxRounds,
         song: gameState.currentSong,
+        songId: gameState.currentSong.id,
       });
       socket.emit("time_update", gameState.roundTimeLeft);
     }
@@ -163,37 +217,31 @@ socket.on("refresh_avatar", ({ playerId }) => {
 
     // Set up disconnect handler for this connection
     socket.on("disconnect", () => {
-      // Update last active timestamp
-      const playerData = gameState.playerData.get(socket.id);
-      if (playerData) {
-        playerData.lastActive = Date.now();
-        gameState.playerData.set(socket.id, playerData);
-      }
-
-      // Don't remove player data immediately on disconnect
-      // This allows for reconnection
-      setTimeout(() => {
-        // If player hasn't reconnected after timeout, clean up
-        const currentPlayerData = gameState.playerData.get(socket.id);
-        if (
-          currentPlayerData &&
-          currentPlayerData.lastActive === playerData.lastActive
-        ) {
-          console.log(
-            `Player ${socket.id} did not reconnect, cleaning up data`
-          );
-          gameState.playerData.delete(socket.id);
-        }
-      }, 120000); // 2 minute timeout for reconnection
+      console.log("User disconnected:", socket.id);
+      socketToRoom.delete(socket.id);
+      handlePlayerLeaving(socket, roomCode);
     });
 
     console.log(`Room ${roomCode} updated players:`, gameState.players);
   }
 
+  // Unified endRound function
   function endRound(roomCode) {
     console.log("Ending round for room:", roomCode);
     const gameState = gameRooms.get(roomCode);
     if (!gameState) return;
+
+    // Ensure currentSong is defined
+    if (!gameState.currentSong) {
+      console.error("currentSong is null or undefined");
+      return;
+    }
+
+    const correctAnswer = gameState.currentSong.correctAnswer;
+    if (!correctAnswer) {
+      console.error("correctAnswer is missing in currentSong");
+      return;
+    }
 
     // Clear round timer
     if (roomTimers.has(roomCode)) {
@@ -201,14 +249,9 @@ socket.on("refresh_avatar", ({ playerId }) => {
       roomTimers.delete(roomCode);
     }
 
-    if (!verifyGameState(io, roomCode)) {
-      console.log("Game state verification failed during round end");
-      return;
-    }
-
     // Send round results to all players
     io.in(roomCode).emit("round_end", {
-      correctAnswer: gameState.currentSong.correctAnswer,
+      correctAnswer: correctAnswer,
       scores: gameState.scores,
       answers: Array.from(gameState.answers.entries()).map(
         ([playerId, data]) => ({
@@ -219,8 +262,10 @@ socket.on("refresh_avatar", ({ playerId }) => {
     });
 
     // Check if game should end
-    if (gameState.currentRound >= MAX_ROUNDS) {
-      console.log(`Maximum rounds (${MAX_ROUNDS}) reached, ending game`);
+    if (gameState.currentRound >= gameState.maxRounds) {
+      console.log(
+        `Maximum rounds (${gameState.maxRounds}) reached, ending game`
+      );
       endGame(roomCode);
       return;
     }
@@ -228,48 +273,13 @@ socket.on("refresh_avatar", ({ playerId }) => {
     // Start next round after delay
     console.log(`Starting next round in 5 seconds for room ${roomCode}`);
     setTimeout(() => {
-      if (verifyGameState(io, roomCode)) {
+      if (verifyGameState(roomCode)) {
         startNewRound(roomCode);
       }
     }, 5000);
   }
 
-  function endGame(roomCode) {
-    console.log("Ending game for room:", roomCode);
-    const gameState = gameRooms.get(roomCode);
-    if (!gameState) return;
-
-    // Clear any existing timers but DON'T disconnect players
-    if (roomTimers.has(roomCode)) {
-      clearInterval(roomTimers.get(roomCode));
-      roomTimers.delete(roomCode);
-    }
-
-    // Calculate final standings
-    const standings = gameState.players
-      .map((player) => ({
-        ...player,
-        finalScore: gameState.scores[player.id] || 0,
-      }))
-      .sort((a, b) => b.finalScore - a.finalScore);
-
-    // Store final standings in game state
-    gameState.finalStandings = standings;
-    gameState.phase = "gameOver";
-
-    // Verify game state before sending final results
-    if (!verifyGameState(io, roomCode)) {
-      console.log("Game state verification failed during game end");
-      return;
-    }
-
-    // Notify all players of game end
-    io.in(roomCode).emit("game_over", {
-      standings,
-      winner: standings[0],
-    });
-  }
-
+  // Unified handlePlayerLeaving function
   function handlePlayerLeaving(socket, roomCode) {
     const gameState = gameRooms.get(roomCode);
     if (!gameState) return;
@@ -309,6 +319,244 @@ socket.on("refresh_avatar", ({ playerId }) => {
     socket.leave(roomCode);
   }
 
+  // Function to handle game start
+  async function startGame(roomCode) {
+    console.log(`Starting game in room ${roomCode}`);
+    const gameState = gameRooms.get(roomCode);
+
+    if (!gameState || gameState.phase !== "lobby") {
+      console.log("Cannot start game - invalid game state");
+      return;
+    }
+
+    const hostPlayer = gameState.players.find((p) => p.isHost);
+    if (hostPlayer?.id !== hostPlayer.id) { // Assuming hostPlayer.id === socket.id
+      console.log("Cannot start game - not host");
+      return;
+    }
+
+    /**
+     * *** OpenAI API Integration ***
+     * Fetch random songs when the game starts.
+     */
+    const rounds = []; // Store each round's data
+    for (let i = 0; i < gameState.maxRounds; i++) {
+      const selectedGenre = getRandomGenre();
+      const songSuggestions = await getSongAndArtistByGenre(
+        selectedGenre,
+        NUM_OPTIONS
+      );
+
+      console.log("Song Suggestions:", songSuggestions);
+
+      // Skip round if there was an error or not enough suggestions returned
+      if (!songSuggestions || songSuggestions.length < NUM_OPTIONS) continue;
+
+      // First suggestion is the correct answer; others are incorrect answers
+      const correctAnswer = songSuggestions[0];
+      const incorrectAnswers = songSuggestions.slice(1);
+      console.log("incorrectAnswers", incorrectAnswers);
+
+      // Store the round data in the specified format
+      rounds.push({
+        genre: selectedGenre,
+        correctAnswer,
+        incorrectAnswers,
+      });
+      // Introduce a delay after each round (before the next API call)
+      await delay(RATE_LIMIT_DELAY);
+    }
+    console.log("All Rounds Data:", JSON.stringify(rounds, null, 2));
+
+    if (!rounds || rounds.length !== gameState.maxRounds) {
+      console.log(
+        "Failed to fetch the required number of rounds from OpenAI"
+      );
+      // Handle error, possibly notify players and end the game
+      io.in(roomCode).emit("error", {
+        message: "Failed to fetch all rounds. Please try again later.",
+      });
+      cleanupRoom(roomCode);
+      return;
+    }
+
+    gameState.songList = rounds; // Store the fetched songs in game state
+
+    gameState.phase = "playing";
+    gameState.currentRound = 0;
+    gameState.scores = {};
+    gameState.finalStandings = null;
+    gameState.players.forEach((player) => {
+      gameState.scores[player.id] = 0;
+      player.score = 0;
+    });
+
+    console.log("Game phase updated to playing, starting first round");
+    io.to(roomCode).emit("gameStart");
+    await startNewRound(roomCode);
+  }
+
+  // Function to start a new round
+  async function startNewRound(roomCode) {
+    console.log("Starting new round for room:", roomCode);
+    const gameState = gameRooms.get(roomCode);
+    if (!gameState) {
+      console.log("Cannot start round - game state not found");
+      return;
+    }
+
+    gameState.currentRound++;
+    console.log(
+      `Round ${gameState.currentRound} starting for room ${roomCode}`
+    );
+
+    // Clear previous round data
+    gameState.answers.clear();
+    gameState.roundTimeLeft = ROUND_TIME;
+    gameState.roundStartTime = Date.now();
+
+    // Check if game should end
+    if (gameState.currentRound > gameState.maxRounds) {
+      endGame(roomCode);
+      return;
+    }
+
+    // Retrieve the current round's song data
+    const roundData = gameState.songList[gameState.currentRound - 1];
+    if (!roundData) {
+      console.error("Round data is missing");
+      endGame(roomCode);
+      return;
+    }
+
+    const correctSong = roundData.correctAnswer; // { song: string, artist: string }
+    let currentSongId;
+    try {
+      currentSongId = await getYouTubeId(correctSong.song, correctSong.artist);
+    } catch (error) {
+      console.error(
+        "Error fetching YouTube ID for the current song:",
+        error.message
+      );
+      return; // Exit in this case
+    }
+
+    if (!correctSong || !currentSongId) {
+      console.error(
+        "No song found for this round or no song ID found from YouTube"
+      );
+      return; // Exit in this case
+    }
+
+    // Construct the Song object
+    const songObject = {
+      id: currentSongId,
+      previewUrl: `https://www.youtube.com/watch?v=${currentSongId}`,
+      title: correctSong.song,
+      artist: correctSong.artist,
+      options: shuffleArray([
+        correctSong.song,
+        ...roundData.incorrectAnswers.map(ans => ans.song)
+      ]),
+      correctAnswer: correctSong.song,
+    };
+
+    // Assign to gameState.currentSong
+    gameState.currentSong = songObject;
+
+    // Broadcast to ALL players in the room
+    io.in(roomCode).emit("new_round", {
+      roundNumber: gameState.currentRound,
+      maxRounds: gameState.maxRounds,
+      song: songObject,
+      songId: currentSongId,
+    });
+
+    // Start the timer for this round
+    if (roomTimers.has(roomCode)) {
+      clearInterval(roomTimers.get(roomCode));
+      roomTimers.delete(roomCode);
+    }
+
+    const timer = setInterval(() => {
+      if (
+        !gameState ||
+        !gameState.roundTimeLeft ||
+        gameState.roundTimeLeft <= 0
+      ) {
+        clearInterval(timer);
+        endRound(roomCode);
+        return;
+      }
+
+      gameState.roundTimeLeft--;
+      io.in(roomCode).emit("time_update", gameState.roundTimeLeft);
+    }, 1000);
+
+    roomTimers.set(roomCode, timer);
+  }
+
+  // Function to end the game
+  function endGame(roomCode) {
+    console.log("Ending game for room:", roomCode);
+    const gameState = gameRooms.get(roomCode);
+    if (!gameState) return;
+
+    // Clear any existing timers but DON'T disconnect players
+    if (roomTimers.has(roomCode)) {
+      clearInterval(roomTimers.get(roomCode));
+      roomTimers.delete(roomCode);
+    }
+
+    // Calculate final standings
+    const standings = gameState.players
+      .map((player) => ({
+        ...player,
+        finalScore: gameState.scores[player.id] || 0,
+      }))
+      .sort((a, b) => b.finalScore - a.finalScore);
+
+    // Store final standings in game state
+    gameState.finalStandings = standings;
+    gameState.phase = "gameOver";
+
+    // Notify all players of game end without forcing a disconnect
+    io.in(roomCode).emit("game_over", {
+      standings,
+      winner: standings[0],
+    });
+
+    // Keep the game state intact for the game over screen
+    gameState.currentSong = null;
+    gameState.answers.clear();
+  }
+
+  // Function to verify game state
+  function verifyGameState(roomCode) {
+    const gameState = gameRooms.get(roomCode);
+    if (!gameState) return false;
+
+    // Verify all players are still connected
+    const connectedPlayers = Array.from(
+      io.sockets.adapter.rooms.get(roomCode) || []
+    );
+    const validPlayers = gameState.players.filter((player) =>
+      connectedPlayers.includes(player.id)
+    );
+
+    // Update player list if needed
+    if (validPlayers.length !== gameState.players.length) {
+      gameState.players = validPlayers;
+      if (validPlayers.length === 0) {
+        gameRooms.delete(roomCode);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  // Socket.io connection handler
   io.on("connection", (socket) => {
     console.log("A user connected:", socket.id);
 
@@ -361,6 +609,7 @@ socket.on("refresh_avatar", ({ playerId }) => {
             roundNumber: gameState.currentRound,
             maxRounds: gameState.maxRounds,
             song: gameState.currentSong,
+            songId: gameState.currentSong.id,
           });
           socket.emit("time_update", gameState.roundTimeLeft);
         }
@@ -381,32 +630,7 @@ socket.on("refresh_avatar", ({ playerId }) => {
     });
 
     socket.on("startGame", async (roomCode) => {
-      console.log(`Starting game in room ${roomCode}`);
-      const gameState = gameRooms.get(roomCode);
-
-      if (!gameState || gameState.phase !== "lobby") {
-        console.log("Cannot start game - invalid game state");
-        return;
-      }
-
-      const hostPlayer = gameState.players.find((p) => p.isHost);
-      if (hostPlayer?.id !== socket.id) {
-        console.log("Cannot start game - not host");
-        return;
-      }
-
-      gameState.phase = "playing";
-      gameState.currentRound = 0;
-      gameState.scores = {};
-      gameState.finalStandings = null;
-      gameState.players.forEach((player) => {
-        gameState.scores[player.id] = 0;
-        player.score = 0;
-      });
-
-      console.log("Game phase updated to playing, starting first round");
-      io.to(roomCode).emit("gameStart");
-      await startNewRound(roomCode);
+      await startGame(roomCode);
     });
 
     socket.on("submit_answer", ({ roomCode, answer }) => {
@@ -495,165 +719,9 @@ socket.on("refresh_avatar", ({ playerId }) => {
       console.log(`Player ${socket.id} leaving room ${roomCode}`);
       handlePlayerLeaving(socket, roomCode);
     });
-
-    socket.on("disconnecting", () => {
-      const roomCode = socketToRoom.get(socket.id);
-      if (roomCode) {
-        handlePlayerLeaving(socket, roomCode);
-      }
-    });
-
-    socket.on("disconnect", () => {
-      console.log("User disconnected:", socket.id);
-      socketToRoom.delete(socket.id);
-    });
   });
 
-  async function startNewRound(roomCode) {
-    console.log("Starting new round for room:", roomCode);
-    const gameState = gameRooms.get(roomCode);
-    if (!gameState) {
-      console.log("Cannot start round - game state not found");
-      return;
-    }
-
-    gameState.currentRound++;
-    console.log(
-      `Round ${gameState.currentRound} starting for room ${roomCode}`
-    );
-
-    // Clear previous round data
-    gameState.answers.clear();
-    gameState.roundTimeLeft = ROUND_TIME;
-    gameState.roundStartTime = Date.now();
-
-    // Check if game should end
-    if (gameState.currentRound > MAX_ROUNDS) {
-      endGame(roomCode);
-      return;
-    }
-
-    // Set the currentSong to the corresponding item in correctSongIds
-    const currentSong = gameState.songList[gameState.currentRound - 1].correctAnswer;
-
-    // Rather than just const currentSongID = await getYouTubeId(currentSong.song, currentSong.artist);
-    // Wrap the result from getYouTubeId in a try block to handle errors from getYouTubeId
-    let currentSongId;
-    try {
-      currentSongId = await await getYouTubeId(currentSong.song, currentSong.artist);
-    } catch (error) {
-      console.error("Error fetching YouTube ID for the current song:", error.message);
-      return; // Exit in this case
-    }
-
-    if (!currentSong || !currentSongId) {
-      console.error("No song found for this round or no song ID found from YouTube");
-      return; // Exit in this case
-    }
-
-    // Log the broadcast attempt
-    console.log(
-      `Broadcasting round ${gameState.currentRound} to all players in room ${roomCode}`,
-      {
-        songData: currentSong,
-        songId: currentSongId,
-        playerCount: gameState.players.length,
-      }
-    );
-
-    // Broadcast to ALL players in the room
-    io.in(roomCode).emit("new_round", {
-      roundNumber: gameState.currentRound,
-      maxRounds: gameState.maxRounds,
-      song: currentSong,
-      songId: currentSongId,
-    });
-
-    // Start the timer for this round
-    if (roomTimers.has(roomCode)) {
-      clearInterval(roomTimers.get(roomCode));
-      roomTimers.delete(roomCode);
-    }
-
-    const timer = setInterval(() => {
-      if (
-        !gameState ||
-        !gameState.roundTimeLeft ||
-        gameState.roundTimeLeft <= 0
-      ) {
-        clearInterval(timer);
-        endRound(roomCode);
-        return;
-      }
-
-      gameState.roundTimeLeft--;
-      io.in(roomCode).emit("time_update", gameState.roundTimeLeft);
-    }, 1000);
-
-    roomTimers.set(roomCode, timer);
-  }
-
-  function endRound(roomCode) {
-    console.log("Ending round for room:", roomCode);
-    const gameState = gameRooms.get(roomCode);
-    if (!gameState) return;
-
-    // Clear round timer
-    if (roomTimers.has(roomCode)) {
-      clearInterval(roomTimers.get(roomCode));
-      roomTimers.delete(roomCode);
-    }
-
-    // Send round results to all players
-    io.in(roomCode).emit("round_end", {
-      correctAnswer: gameState.currentSong.correctAnswer,
-      scores: gameState.scores,
-      answers: Array.from(gameState.answers.entries()).map(
-        ([playerId, data]) => ({
-          player: gameState.players.find((p) => p.id === playerId),
-          ...data,
-        })
-      ),
-    });
-
-    // Check if game should end
-    if (gameState.currentRound >= MAX_ROUNDS) {
-      console.log(`Maximum rounds (${MAX_ROUNDS}) reached, ending game`);
-      endGame(roomCode);
-      return;
-    }
-
-    // Start next round after delay
-    console.log(`Starting next round in 5 seconds for room ${roomCode}`);
-    setTimeout(() => {
-      startNewRound(roomCode);
-    }, 5000);
-  }
-
-  function verifyGameState(roomCode) {
-    const gameState = gameRooms.get(roomCode);
-    if (!gameState) return false;
-
-    // Verify all players are still connected
-    const connectedPlayers = Array.from(
-      io.sockets.adapter.rooms.get(roomCode) || []
-    );
-    const validPlayers = gameState.players.filter((player) =>
-      connectedPlayers.includes(player.id)
-    );
-
-    // Update player list if needed
-    if (validPlayers.length !== gameState.players.length) {
-      gameState.players = validPlayers;
-      if (validPlayers.length === 0) {
-        gameRooms.delete(roomCode);
-        return false;
-      }
-    }
-
-    return true;
-  }
-
+  // Function to end the game
   function endGame(roomCode) {
     console.log("Ending game for room:", roomCode);
     const gameState = gameRooms.get(roomCode);
@@ -688,111 +756,189 @@ socket.on("refresh_avatar", ({ playerId }) => {
     gameState.answers.clear();
   }
 
-  function endRound(roomCode) {
-    console.log("Ending round for room:", roomCode);
+  // Function to start a new round
+  async function startNewRound(roomCode) {
+    console.log("Starting new round for room:", roomCode);
     const gameState = gameRooms.get(roomCode);
-    if (!gameState) return;
+    if (!gameState) {
+      console.log("Cannot start round - game state not found");
+      return;
+    }
 
-    // Clear round timer
+    gameState.currentRound++;
+    console.log(
+      `Round ${gameState.currentRound} starting for room ${roomCode}`
+    );
+
+    // Clear previous round data
+    gameState.answers.clear();
+    gameState.roundTimeLeft = ROUND_TIME;
+    gameState.roundStartTime = Date.now();
+
+    // Check if game should end
+    if (gameState.currentRound > gameState.maxRounds) {
+      endGame(roomCode);
+      return;
+    }
+
+    // Retrieve the current round's song data
+    const roundData = gameState.songList[gameState.currentRound - 1];
+    if (!roundData) {
+      console.error("Round data is missing");
+      endGame(roomCode);
+      return;
+    }
+
+    const correctSong = roundData.correctAnswer; // { song: string, artist: string }
+    let currentSongId;
+    try {
+      currentSongId = await getYouTubeId(correctSong.song, correctSong.artist);
+    } catch (error) {
+      console.error(
+        "Error fetching YouTube ID for the current song:",
+        error.message
+      );
+      return; // Exit in this case
+    }
+
+    if (!correctSong || !currentSongId) {
+      console.error(
+        "No song found for this round or no song ID found from YouTube"
+      );
+      return; // Exit in this case
+    }
+
+    // Construct the Song object
+    const songObject = {
+      id: currentSongId,
+      previewUrl: `https://www.youtube.com/watch?v=${currentSongId}`,
+      title: correctSong.song,
+      artist: correctSong.artist,
+      options: shuffleArray([
+        correctSong.song,
+        ...roundData.incorrectAnswers.map(ans => ans.song)
+      ]),
+      correctAnswer: correctSong.song,
+    };
+
+    // Assign to gameState.currentSong
+    gameState.currentSong = songObject;
+
+    // Broadcast to ALL players in the room
+    io.in(roomCode).emit("new_round", {
+      roundNumber: gameState.currentRound,
+      maxRounds: gameState.maxRounds,
+      song: songObject,
+      songId: currentSongId,
+    });
+
+    // Start the timer for this round
     if (roomTimers.has(roomCode)) {
       clearInterval(roomTimers.get(roomCode));
       roomTimers.delete(roomCode);
     }
 
-    // Send round results to all players
-    io.in(roomCode).emit("round_end", {
-      correctAnswer: gameState.currentSong.correctAnswer,
-      scores: gameState.scores,
-      answers: Array.from(gameState.answers.entries()).map(
-        ([playerId, data]) => ({
-          player: gameState.players.find((p) => p.id === playerId),
-          ...data,
-        })
-      ),
-    });
-
-    // Check if game should end
-    if (gameState.currentRound >= MAX_ROUNDS) {
-      console.log(`Maximum rounds (${MAX_ROUNDS}) reached, ending game`);
-      // Don't start a new timer, just end the game
-      endGame(roomCode);
-    } else {
-      // Only start next round if we haven't reached max rounds
-      console.log(`Starting next round in 5 seconds for room ${roomCode}`);
-      setTimeout(() => {
-        startNewRound(roomCode);
-      }, 5000);
-    }
-  }
-  function handlePlayerLeaving(socket, roomCode) {
-    const gameState = gameRooms.get(roomCode);
-    if (!gameState) return;
-
-    console.log(`Player ${socket.id} leaving room ${roomCode}`);
-
-    // Remove player from game state
-    const playerIndex = gameState.players.findIndex((p) => p.id === socket.id);
-    if (playerIndex !== -1) {
-      const wasHost = gameState.players[playerIndex].isHost;
-      gameState.players.splice(playerIndex, 1);
-      delete gameState.scores[socket.id];
-
-      // If player was host, assign new host
-      if (wasHost && gameState.players.length > 0) {
-        gameState.players[0].isHost = true;
+    const timer = setInterval(() => {
+      if (
+        !gameState ||
+        !gameState.roundTimeLeft ||
+        gameState.roundTimeLeft <= 0
+      ) {
+        clearInterval(timer);
+        endRound(roomCode);
+        return;
       }
 
-      // Remove room if empty
-      if (gameState.players.length === 0) {
-        console.log(`Room ${roomCode} is empty, cleaning up`);
-        gameRooms.delete(roomCode);
-        if (roomTimers.has(roomCode)) {
-          clearInterval(roomTimers.get(roomCode));
-          roomTimers.delete(roomCode);
-        }
-      } else {
-        // Notify remaining players
-        socket.to(roomCode).emit("userLeft", {
-          id: socket.id,
-          players: gameState.players,
-        });
+      gameState.roundTimeLeft--;
+      io.in(roomCode).emit("time_update", gameState.roundTimeLeft);
+    }, 1000);
 
-        // If game is in progress and there's only one player left, end the game
-        if (gameState.phase === "playing" && gameState.players.length === 1) {
-          endGame(roomCode);
-        }
-      }
-    }
-
-    socket.leave(roomCode);
+    roomTimers.set(roomCode, timer);
   }
 
   /**
-   * This funciton is responsible for sending a get request to the YouTube API
-   * for the given track title and artist and return the video id
+   * This function is responsible for sending a GET request to the YouTube API
+   * for the given track title and artist and returns the video ID
    */
   async function getYouTubeId(song, artist) {
     try {
-      const query = `${song} ${artist}`; // Query string to search youtube
+      const query = `${song} ${artist}`; // Query string to search YouTube
 
-      const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
-        params: {
-          part: 'snippet',      // Request snippet info
-          q: query,             // Search query
-          type: 'video',        
-          key: apiKey,          // API Key from .env
-      },
-    });
+      const response = await axios.get(
+        "https://www.googleapis.com/youtube/v3/search",
+        {
+          params: {
+            part: "snippet", // Request snippet info
+            q: query, // Search query
+            type: "video",
+            key: youTubeApiKey, // API Key from .env
+          },
+        }
+      );
 
       if (response.data.items && response.data.items.length > 0) {
         const videoID = response.data.items[0].id.videoId; // Extract the first match
-        return videoID; // Return the video id
+        return videoID; // Return the video ID
       } else {
-        throw new Error('Error: Could not return video for the given song and artist');
+        throw new Error(
+          "Error: Could not return video for the given song and artist"
+        );
       }
     } catch (error) {
-      console.error('Could not fetch YouTube video Error:', error.message);
+      console.error("Could not fetch YouTube video Error:", error.message);
       throw error;
+    }
+  }
+
+  // Function to randomly select a genre
+  function getRandomGenre() {
+    const randomGenre = genres[Math.floor(Math.random() * genres.length)];
+
+    console.log(`Selected Genre: ${randomGenre}`);
+    return randomGenre;
+  }
+
+  function splitTitleAndArtist(responseText) {
+    return responseText
+      .trim()
+      .split("\n") // Split the response by newlines
+      .filter((line) => line.includes(" - ")) // Only keep lines with ' - ', i.e., song-artist pairs
+      .map((line) => {
+        // Remove list number (e.g., "1. ") at the start of the line
+        const cleanedLine = line.replace(/^\d+\.\s*/, "").replace(/"/g, ""); // Remove numbers and quotes
+        const [songTitle, artistName] = cleanedLine.split(" - "); // Split into song and artist
+        return { song: songTitle.trim(), artist: artistName.trim() }; // Return an object
+      });
+  }
+
+  async function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // Function to get song and artist suggestions from OpenAI based on the genre
+  async function getSongAndArtistByGenre(genre, numSongs) {
+    try {
+      const response = await openai.chat.completions.create({
+        messages: [
+          {
+            role: "user",
+            content: `Suggest ${numSongs} random, unique song and artist pairs from the ${genre} genre. Format each as "Song Title - Artist Name", and separate them by new lines.`,
+          },
+        ],
+        // Currently, using GPT-4, might have to experiment with other models
+        model: "gpt-4",
+      });
+      console.log(
+        `OpenAI API Response: ${response.choices[0].message.content}`
+      );
+
+      return splitTitleAndArtist(response.choices[0].message.content).slice(
+        0,
+        numSongs
+      );
+    } catch (error) {
+      console.error("[Error]: Unable to generate a song", error);
+      return null;
     }
   }
 
