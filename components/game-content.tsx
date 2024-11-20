@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -46,6 +46,8 @@ export default function GameContent() {
     points: number;
   } | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
+  const playerRef = useRef<YT.Player | null>(null); 
+
 
   // Check that the YouTube API is available before a round starts
   useEffect(() => {
@@ -80,7 +82,12 @@ export default function GameContent() {
   // Play the song from the YouTube API
   const startYouTubePlayer = (songId: string) => {
     if (window.YT) {
-      const player = new YT.Player("audio-player", {
+      if (playerRef.current) {
+        console.log("Destroying previous player");
+        playerRef.current.destroy();
+      }
+
+      playerRef.current = new YT.Player("audio-player", {
         videoId: songId,
         playerVars: {
           controls: 0, // Do not show controls to players
@@ -104,7 +111,7 @@ export default function GameContent() {
               console.log("Stop playing song after 7 seconds");
               setIsPlaying(false);
               setMessage("Snippet Ended...");
-            }, 7000); // Pause the song after 7 seconds - remaining time is used for guessing
+            }, 10000); // Pause the song after 7 seconds - remaining time is used for guessing
           },
           onStateChange: (event: YT.OnStateChangeEvent) => {
             if (event.data === YT.PlayerState.ENDED) {
@@ -139,6 +146,7 @@ export default function GameContent() {
 
       // On new round, trigger the YouTube player
       if (data.songId) {
+        console.log("New round, initializing ytplayer with songId:", songId);
         startYouTubePlayer(data.songId);
       }
     };

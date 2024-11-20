@@ -768,7 +768,7 @@ socket.on("refresh_avatar", ({ playerId }) => {
   }
 
   /**
-   * This funciton is responsible for sending a get request to the YouTube API
+   * This function is responsible for sending a get request to the YouTube API
    * for the given track title and artist and return the video id
    */
   async function getYouTubeId(song, artist) {
