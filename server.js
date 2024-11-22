@@ -271,12 +271,12 @@ app.prepare().then(() => {
     }
 
     // Start next round after delay
-    console.log(`Starting next round in 5 seconds for room ${roomCode}`);
+    console.log(`Starting next round in 1 second for room ${roomCode}`);
     setTimeout(() => {
       if (verifyGameState(roomCode)) {
         startNewRound(roomCode);
       }
-    }, 5000);
+    }, 1000);
   }
 
   // Unified handlePlayerLeaving function
